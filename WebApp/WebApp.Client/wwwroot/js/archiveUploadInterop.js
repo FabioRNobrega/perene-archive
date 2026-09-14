@@ -23,3 +23,12 @@ export function getSelectedFileInfo(inputElement, fileIndex) {
 
     return { name: file.name, size: file.size };
 }
+
+export function getRelativePaths(inputElement) {
+    const files = inputElement?.files;
+    if (!files) {
+        return [];
+    }
+
+    return Array.from(files, file => file.webkitRelativePath || file.name);
+}

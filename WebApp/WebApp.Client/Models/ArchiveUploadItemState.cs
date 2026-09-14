@@ -22,6 +22,8 @@ public sealed class ArchiveUploadItemState
 
     public required long TotalBytes { get; init; }
 
+    public string? RelativePath { get; init; }
+
     public string? UploadId { get; set; }
 
     public long AcknowledgedBytes { get; set; }

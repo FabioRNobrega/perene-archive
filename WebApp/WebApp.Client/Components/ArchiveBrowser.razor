@@ -107,7 +107,16 @@
                         aria-label="Upload">
                     <i class="bi bi-upload fs-5 lh-1" aria-hidden="true"></i>
                 </button>
+                <button class="btn btn-secondary rounded-circle d-inline-flex align-items-center justify-content-center"
+                        style="width:44px;height:44px;"
+                        type="button"
+                        disabled="@_operationPending"
+                        @onclick="TriggerFolderUpload"
+                        aria-label="Upload folder">
+                    <i class="bi bi-folder-plus fs-5 lh-1" aria-hidden="true"></i>
+                </button>
                 <InputFile @ref="_fileInput" OnChange="OnFilesSelected" multiple class="visually-hidden" aria-hidden="true" />
+                <InputFile @ref="_folderInput" OnChange="OnFolderSelected" webkitdirectory directory multiple class="visually-hidden" aria-hidden="true" aria-label="Choose a folder to upload" />
                 <InputFile @ref="_resumeFileInput" OnChange="OnResumeFileSelected" class="visually-hidden" aria-hidden="true" aria-label="Reselect file to resume upload" />
             </div>
         }
@@ -131,7 +140,7 @@
             {
                 <div @key="upload" class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
                     <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-                        <span class="text-truncate fw-semibold">@upload.FileName</span>
+                        <span class="text-truncate fw-semibold">@(upload.RelativePath ?? upload.FileName)</span>
                         <span class="badge @UploadStatusBadgeClass(upload.Status) d-inline-flex align-items-center gap-1">
                             @if (upload.Status is ArchiveUploadItemStatus.Uploading or ArchiveUploadItemStatus.Completing)
                             {
@@ -600,6 +609,7 @@
     private readonly List<ArchiveUploadItemState> _uploads = [];
     private readonly Dictionary<ArchiveUploadItemState, (ElementReference Element, int FileIndex)> _uploadFileRefs = [];
     private InputFile? _fileInput;
+    private InputFile? _folderInput;
     private InputFile? _resumeFileInput;
     private ArchiveUploadItemState? _resumeTarget;
     private IJSObjectReference? _uploadInteropModule;
@@ -931,15 +941,127 @@
             _uploadFileRefs[state] = (inputElement, index);
             StateHasChanged();
 
-            await CreateUploadSessionAsync(state);
+            await CreateUploadSessionAsync(state, _listing?.CurrentFolderId);
         }
     }
 
-    private async Task CreateUploadSessionAsync(ArchiveUploadItemState state)
+    private async Task TriggerFolderUpload()
+    {
+        if (_folderInput?.Element is not { } element || _bootstrapModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _bootstrapModule.InvokeVoidAsync("clickElement", element);
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task OnFolderSelected(InputFileChangeEventArgs e)
+    {
+        if (_folderInput?.Element is not { } inputElement || _uploadInteropModule is null)
+        {
+            return;
+        }
+
+        var files = e.GetMultipleFiles(e.FileCount);
+        var relativePaths = await _uploadInteropModule.InvokeAsync<string[]>("getRelativePaths", inputElement);
+
+        var folderIdsByPath = new Dictionary<string, string?>(StringComparer.Ordinal) { [""] = _listing?.CurrentFolderId };
+
+        for (var index = 0; index < files.Count; index++)
+        {
+            var file = files[index];
+            var relativePath = index < relativePaths.Length ? relativePaths[index] : file.Name;
+            var segments = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0 || segments[^1].StartsWith('.'))
+            {
+                continue;
+            }
+
+            var parentId = _listing?.CurrentFolderId;
+            var pathSoFar = "";
+            for (var segmentIndex = 0; segmentIndex < segments.Length - 1; segmentIndex++)
+            {
+                pathSoFar = pathSoFar.Length == 0 ? segments[segmentIndex] : $"{pathSoFar}/{segments[segmentIndex]}";
+                if (!folderIdsByPath.TryGetValue(pathSoFar, out var folderId))
+                {
+                    folderId = await GetOrCreateFolderAsync(parentId, segments[segmentIndex]);
+                    folderIdsByPath[pathSoFar] = folderId;
+                }
+
+                if (folderId is null)
+                {
+                    parentId = null;
+                    break;
+                }
+
+                parentId = folderId;
+            }
+
+            if (parentId is null && segments.Length > 1)
+            {
+                continue;
+            }
+
+            var state = new ArchiveUploadItemState { FileName = segments[^1], TotalBytes = file.Size, RelativePath = relativePath };
+            _uploads.Add(state);
+            _uploadFileRefs[state] = (inputElement, index);
+            StateHasChanged();
+
+            await CreateUploadSessionAsync(state, parentId);
+        }
+
+        if (folderIdsByPath.Count > 1)
+        {
+            await LoadAsync(_listing?.CurrentFolderId, restartPolling: false, showLoading: false);
+        }
+    }
+
+    private async Task<string?> GetOrCreateFolderAsync(string? parentId, string name)
     {
         try
         {
-            var request = new ArchiveUploadCreateRequest(_listing?.CurrentFolderId, state.FileName, state.TotalBytes);
+            var listingUrl = $"api/archive/{Category}/items";
+            if (!string.IsNullOrWhiteSpace(parentId))
+            {
+                listingUrl += $"?folderId={Uri.EscapeDataString(parentId)}";
+            }
+
+            var existingListing = await Http.GetFromJsonAsync<ArchiveListingDto>(listingUrl);
+            var existing = existingListing?.Items.FirstOrDefault(item =>
+                item.Kind == ArchiveItemKind.Folder && string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                return existing.Id;
+            }
+
+            using var response = await Http.PostAsJsonAsync($"api/archive/{Category}/folders", new CreateFolderRequest(parentId, name));
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var listing = await response.Content.ReadFromJsonAsync<ArchiveListingDto>();
+            return listing?.Items.FirstOrDefault(item =>
+                item.Kind == ArchiveItemKind.Folder && string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Failed to create or find folder {FolderName} under parent {ParentId}.", name, parentId);
+            return null;
+        }
+    }
+
+    private async Task CreateUploadSessionAsync(ArchiveUploadItemState state, string? parentId)
+    {
+        try
+        {
+            var request = new ArchiveUploadCreateRequest(parentId, state.FileName, state.TotalBytes);
             using var response = await Http.PostAsJsonAsync($"api/archive/{Category}/uploads", request);
             if (!response.IsSuccessStatusCode)
             {
