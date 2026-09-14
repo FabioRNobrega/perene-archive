@@ -96,3 +96,10 @@ get-url:
 	port=$$(grep -m1 '^WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
 	port=$${port:-8080}; \
 	echo "Access PereneArchive on http://$$ip:$$port"
+
+get-url-nas:
+	@iface=$$(ip route | awk '/^default/ {print $$5; exit}'); \
+	ip=$$(ip -4 -o addr show "$$iface" | awk '{print $$4}' | cut -d/ -f1); \
+	port=$$(grep -m1 '^WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
+	port=$${port:-8080}; \
+	echo "Access PereneArchive on http://$$ip:$$port"
