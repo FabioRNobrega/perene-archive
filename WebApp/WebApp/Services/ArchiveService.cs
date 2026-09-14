@@ -119,8 +119,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return BuildListing(category, parent);
     }
 
-    public async Task<ArchiveListing> SaveUploadedFileAsync(
-        string categoryKey, string? parentId, string fileName, Stream content, CancellationToken cancellationToken)
+    public ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName)
     {
         var category = ResolveCategory(categoryKey);
         if (!category.CanCreateFolder)
@@ -142,28 +141,14 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             throw new ArchiveConflictException("An item with that name already exists.");
         }
 
-        var tempPath = Path.Combine(parent.PhysicalPath, Path.GetRandomFileName());
-        try
-        {
-            await using (var fileStream = new FileStream(
-                tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 64 * 1024, useAsync: true))
-            {
-                await content.CopyToAsync(fileStream, cancellationToken);
-            }
+        return new ArchiveUploadDestination(category, parent, safeName, destination);
+    }
 
-            File.Move(tempPath, destination);
-        }
-        catch
-        {
-            if (File.Exists(tempPath))
-            {
-                File.Delete(tempPath);
-            }
-
-            throw;
-        }
-
-        return BuildListing(category, parent);
+    public ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath)
+    {
+        var destination = ValidateUploadDestination(categoryKey, parentId, fileName);
+        File.Move(sourceTempPath, destination.FinalPath);
+        return BuildListing(destination.Category, destination.Parent);
     }
 
     public ArchiveListing Rename(string categoryKey, string itemId, string name)

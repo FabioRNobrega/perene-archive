@@ -79,7 +79,8 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveListing ListPlaylist(string categoryKey, string? folderId) => throw new NotSupportedException();
         public ArchiveListing CreateFolder(string categoryKey, string? parentId, string name) => throw new NotSupportedException();
         public ArchiveListing CreateFile(string categoryKey, string? parentId, string name, string extension) => throw new NotSupportedException();
-        public Task<ArchiveListing> SaveUploadedFileAsync(string categoryKey, string? parentId, string fileName, Stream content, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName) => throw new NotSupportedException();
+        public ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath) => throw new NotSupportedException();
         public ArchiveListing Rename(string categoryKey, string itemId, string name) => throw new NotSupportedException();
         public ArchiveListing Move(string categoryKey, string itemId, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveListing MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();

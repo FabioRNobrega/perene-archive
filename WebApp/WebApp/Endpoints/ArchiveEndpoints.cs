@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using WebApp.Client.Models;
 using WebApp.Models;
 using WebApp.Services;
@@ -33,7 +32,12 @@ internal static class ArchiveEndpoints
         endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync);
         endpoints.MapPost("/api/archive/{category}/folders", CreateFolder);
         endpoints.MapPost("/api/archive/{category}/files", CreateFile);
-        endpoints.MapPost("/api/archive/{category}/upload", UploadAsync).DisableAntiforgery();
+        endpoints.MapPost("/api/archive/{category}/uploads", CreateUploadSession);
+        endpoints.MapGet("/api/archive/{category}/uploads", ListUploadSessions);
+        endpoints.MapGet("/api/archive/{category}/uploads/{uploadId}", GetUploadStatus);
+        endpoints.MapPut("/api/archive/{category}/uploads/{uploadId}/chunk", AppendUploadChunkAsync).DisableAntiforgery();
+        endpoints.MapPost("/api/archive/{category}/uploads/{uploadId}/complete", CompleteUploadAsync);
+        endpoints.MapDelete("/api/archive/{category}/uploads/{uploadId}", CancelUploadAsync);
         endpoints.MapPatch("/api/archive/{category}/items/{id}/name", Rename);
         endpoints.MapPatch("/api/archive/{category}/items/{id}/location", Move);
         endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash);
@@ -117,11 +121,90 @@ internal static class ArchiveEndpoints
             epubBookService,
             cancellationToken));
 
-    private static async Task<IResult> UploadAsync(
+    private static IResult CreateUploadSession(
         string category,
-        IFormFile file,
-        [FromQuery] string? parentId,
-        IArchiveService archive,
+        ArchiveUploadCreateRequest request,
+        IArchiveUploadService uploads)
+    {
+        try
+        {
+            var session = uploads.Create(category, request.ParentId, request.FileName, request.TotalBytes);
+            return Results.Ok(ToDto(session));
+        }
+        catch (ArchiveValidationException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (ArchiveForbiddenException exception)
+        {
+            return Results.Problem(title: "Archive upload is not allowed.", detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (ArchiveConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+    }
+
+    private static IResult ListUploadSessions(string category, string? parentId, IArchiveUploadService uploads) =>
+        Results.Ok(uploads.ListActive(category, parentId).Select(ToDto).ToList());
+
+    private static IResult GetUploadStatus(string category, string uploadId, IArchiveUploadService uploads)
+    {
+        try
+        {
+            return Results.Ok(ToDto(uploads.GetStatus(category, uploadId)));
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+    }
+
+    private static async Task<IResult> AppendUploadChunkAsync(
+        string category,
+        string uploadId,
+        long offset,
+        long length,
+        HttpRequest request,
+        IArchiveUploadService uploads,
+        CancellationToken cancellationToken)
+    {
+        if (length <= 0)
+        {
+            return Results.BadRequest(new { error = "A positive chunk length is required." });
+        }
+
+        try
+        {
+            var session = await uploads.AppendChunkAsync(category, uploadId, offset, length, request.Body, cancellationToken);
+            return Results.Ok(ToDto(session));
+        }
+        catch (OperationCanceledException)
+        {
+            return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (ArchiveValidationException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (ArchiveConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+    }
+
+    private static async Task<IResult> CompleteUploadAsync(
+        string category,
+        string uploadId,
+        IArchiveUploadService uploads,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
         SubtitleCoordinator subtitleCoordinator,
@@ -130,8 +213,7 @@ internal static class ArchiveEndpoints
         CancellationToken cancellationToken) =>
         await ExecuteAsync(async () =>
         {
-            await using var stream = file.OpenReadStream();
-            var listing = await archive.SaveUploadedFileAsync(category, parentId, file.FileName, stream, cancellationToken);
+            var listing = await uploads.CompleteAsync(category, uploadId, cancellationToken);
             return await ToDtoAsync(
                 listing,
                 thumbnailCoordinator,
@@ -141,6 +223,38 @@ internal static class ArchiveEndpoints
                 epubBookService,
                 cancellationToken);
         });
+
+    private static async Task<IResult> CancelUploadAsync(
+        string category, string uploadId, IArchiveUploadService uploads, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await uploads.CancelAsync(category, uploadId, cancellationToken);
+            return Results.Ok();
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+    }
+
+    private static ArchiveUploadSessionDto ToDto(WebApp.Models.ArchiveUploadSession session) =>
+        new(
+            session.Id,
+            session.CategoryKey,
+            session.ParentId,
+            session.FileName,
+            session.TotalBytes,
+            session.ReceivedBytes,
+            session.ChunkSizeBytes,
+            session.Status switch
+            {
+                WebApp.Models.ArchiveUploadSessionStatus.Completed => ArchiveUploadStatus.Completed,
+                WebApp.Models.ArchiveUploadSessionStatus.Cancelled => ArchiveUploadStatus.Cancelled,
+                _ => ArchiveUploadStatus.Uploading
+            },
+            session.CreatedAt,
+            session.LastActivityAt);
 
     private static async Task<IResult> Rename(
         string category,

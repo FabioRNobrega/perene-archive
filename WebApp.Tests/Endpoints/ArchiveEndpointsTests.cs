@@ -263,40 +263,171 @@ public sealed class ArchiveEndpointsTests
     }
 
     [Fact]
-    public async Task Upload_with_valid_multipart_file_is_retrievable_and_listed_afterward()
+    public async Task Legacy_multipart_upload_route_no_longer_exists()
     {
         using var root = CreateArchive();
         using var factory = new VideoManagerFactory(root.Path);
         using var client = factory.CreateClient();
-
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent("hello archive"u8.ToArray());
         content.Add(fileContent, "file", "notes.txt");
 
         using var response = await client.PostAsync("/api/archive/documents/upload", content);
-        var listing = await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/documents/items");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains(listing!.Items, item => item.Name == "notes.txt");
-        Assert.Equal("hello archive", await File.ReadAllTextAsync(Path.Combine(root.Path, "Documents", "notes.txt")));
+        // The old singular "/upload" route no longer exists: routing either finds no endpoint at
+        // all (404) or, since "/uploads" now shares the same prefix, matches nothing for POST on
+        // this exact literal path and reports method-not-allowed (405). Either way, no multipart
+        // upload is accepted through it anymore.
+        Assert.True(
+            response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+            $"Expected 404 or 405, got {response.StatusCode}.");
     }
 
     [Fact]
-    public async Task Upload_with_unsupported_extension_returns_bad_request_and_is_not_listed()
+    public async Task Upload_session_create_chunk_status_and_complete_flow_publishes_exactly_one_item()
     {
         using var root = CreateArchive();
         using var factory = new VideoManagerFactory(root.Path);
         using var client = factory.CreateClient();
+        var payload = "hello archive upload session"u8.ToArray();
 
-        using var content = new MultipartFormDataContent();
-        using var fileContent = new ByteArrayContent([1, 2, 3]);
-        content.Add(fileContent, "file", "malware.exe");
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/archive/documents/uploads", new ArchiveUploadCreateRequest(null, "notes.txt", payload.Length));
+        var createJson = await createResponse.Content.ReadAsStringAsync();
+        var session = await createResponse.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
 
-        using var response = await client.PostAsync("/api/archive/documents/upload", content);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        Assert.DoesNotContain(root.Path, createJson);
+        Assert.Equal(0, session!.ReceivedBytes);
+        Assert.True(session.ChunkSizeBytes > 0);
+
+        var firstLength = 10;
+        using var chunkContent = new ByteArrayContent(payload[..firstLength]);
+        using var chunkResponse = await client.PutAsync(
+            $"/api/archive/documents/uploads/{session.Id}/chunk?offset=0&length={firstLength}", chunkContent);
+        var afterFirst = await chunkResponse.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
+
+        Assert.Equal(HttpStatusCode.OK, chunkResponse.StatusCode);
+        Assert.Equal(firstLength, afterFirst!.ReceivedBytes);
+
+        var statusJson = await client.GetStringAsync($"/api/archive/documents/uploads/{session.Id}");
+        Assert.DoesNotContain(root.Path, statusJson);
+        var status = await client.GetFromJsonAsync<ArchiveUploadSessionDto>($"/api/archive/documents/uploads/{session.Id}");
+        Assert.Equal(firstLength, status!.ReceivedBytes);
+
+        var remainingLength = payload.Length - firstLength;
+        using var secondChunkContent = new ByteArrayContent(payload[firstLength..]);
+        using var secondChunkResponse = await client.PutAsync(
+            $"/api/archive/documents/uploads/{session.Id}/chunk?offset={firstLength}&length={remainingLength}", secondChunkContent);
+        Assert.Equal(HttpStatusCode.OK, secondChunkResponse.StatusCode);
+
+        using var completeResponse = await client.PostAsync($"/api/archive/documents/uploads/{session.Id}/complete", content: null);
+        var completeJson = await completeResponse.Content.ReadAsStringAsync();
+        var listing = await completeResponse.Content.ReadFromJsonAsync<ArchiveListingDto>();
+
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.DoesNotContain(root.Path, completeJson);
+        Assert.Contains(listing!.Items, item => item.Name == "notes.txt");
+        var finalPath = Path.Combine(root.Path, "Documents", "notes.txt");
+        Assert.True(File.Exists(finalPath));
+        Assert.Equal(payload, await File.ReadAllBytesAsync(finalPath));
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/archive/documents/uploads/{session.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Upload_session_survives_an_interruption_and_resumes_across_a_fresh_factory_over_the_same_root()
+    {
+        using var root = CreateArchive();
+        var payload = new byte[64];
+        Random.Shared.NextBytes(payload);
+        string sessionId;
+
+        using (var factory = new VideoManagerFactory(root.Path))
+        using (var client = factory.CreateClient())
+        {
+            using var createResponse = await client.PostAsJsonAsync(
+                "/api/archive/documents/uploads", new ArchiveUploadCreateRequest(null, "clip.txt", payload.Length));
+            var session = await createResponse.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
+            sessionId = session!.Id;
+
+            using var chunkContent = new ByteArrayContent(payload[..32]);
+            using var chunkResponse = await client.PutAsync(
+                $"/api/archive/documents/uploads/{sessionId}/chunk?offset=0&length=32", chunkContent);
+            Assert.Equal(HttpStatusCode.OK, chunkResponse.StatusCode);
+            // The client is dropped here to simulate an interrupted connection before completion.
+        }
+
+        using var resumedFactory = new VideoManagerFactory(root.Path);
+        using var resumedClient = resumedFactory.CreateClient();
+
+        var listSessions = await resumedClient.GetFromJsonAsync<List<ArchiveUploadSessionDto>>("/api/archive/documents/uploads");
+        var recovered = Assert.Single(listSessions!);
+        Assert.Equal(sessionId, recovered.Id);
+        Assert.Equal(32, recovered.ReceivedBytes);
+
+        using var remainingChunkContent = new ByteArrayContent(payload[32..]);
+        using var remainingChunkResponse = await resumedClient.PutAsync(
+            $"/api/archive/documents/uploads/{sessionId}/chunk?offset=32&length=32", remainingChunkContent);
+        Assert.Equal(HttpStatusCode.OK, remainingChunkResponse.StatusCode);
+
+        using var completeResponse = await resumedClient.PostAsync($"/api/archive/documents/uploads/{sessionId}/complete", content: null);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(Path.Combine(root.Path, "Documents", "clip.txt")));
+    }
+
+    [Fact]
+    public async Task Upload_session_create_rejects_trash_unsupported_extension_and_collision_without_leaking_paths()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Documents", "existing.txt"), "content");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+
+        using var trashResponse = await client.PostAsJsonAsync(
+            "/api/archive/trash/uploads", new ArchiveUploadCreateRequest(null, "notes.txt", 10));
+        Assert.Equal(HttpStatusCode.Forbidden, trashResponse.StatusCode);
+
+        using var unsupportedResponse = await client.PostAsJsonAsync(
+            "/api/archive/documents/uploads", new ArchiveUploadCreateRequest(null, "malware.exe", 10));
+        var unsupportedJson = await unsupportedResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, unsupportedResponse.StatusCode);
+        Assert.DoesNotContain(root.Path, unsupportedJson);
+
+        using var collisionResponse = await client.PostAsJsonAsync(
+            "/api/archive/documents/uploads", new ArchiveUploadCreateRequest(null, "existing.txt", 10));
+        Assert.Equal(HttpStatusCode.Conflict, collisionResponse.StatusCode);
+
         var listing = await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/documents/items");
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.DoesNotContain(listing!.Items, item => item.Name == "malware.exe");
+    }
+
+    [Fact]
+    public async Task Upload_chunk_endpoint_rejects_gap_offsets_and_unknown_sessions_without_leaking_paths()
+    {
+        using var root = CreateArchive();
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/archive/documents/uploads", new ArchiveUploadCreateRequest(null, "notes.txt", 20));
+        var session = await createResponse.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
+
+        using var gapContent = new ByteArrayContent(new byte[5]);
+        using var gapResponse = await client.PutAsync(
+            $"/api/archive/documents/uploads/{session!.Id}/chunk?offset=5&length=5", gapContent);
+        var gapJson = await gapResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.Conflict, gapResponse.StatusCode);
+        Assert.DoesNotContain(root.Path, gapJson);
+
+        using var unknownContent = new ByteArrayContent(new byte[5]);
+        using var unknownResponse = await client.PutAsync(
+            $"/api/archive/documents/uploads/{Guid.NewGuid():N}/chunk?offset=0&length=5", unknownContent);
+        Assert.Equal(HttpStatusCode.NotFound, unknownResponse.StatusCode);
+
+        using var cancelResponse = await client.DeleteAsync($"/api/archive/documents/uploads/{session.Id}");
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/archive/documents/uploads/{session.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/archive/documents/uploads/{session.Id}")).StatusCode);
     }
 
     [Fact]

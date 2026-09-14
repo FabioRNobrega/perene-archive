@@ -12,7 +12,19 @@ internal interface IArchiveService
 
     ArchiveListing CreateFile(string categoryKey, string? parentId, string name, string extension);
 
-    Task<ArchiveListing> SaveUploadedFileAsync(string categoryKey, string? parentId, string fileName, Stream content, CancellationToken cancellationToken);
+    /// <summary>
+    /// Validates that <paramref name="fileName"/> could be uploaded into the given category/parent
+    /// right now (category permission, safe name, supported extension, parent resolution, and final
+    /// name collision) without writing anything. Used by <c>IArchiveUploadService</c> both at
+    /// session creation and again at completion, immediately before publishing.
+    /// </summary>
+    ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName);
+
+    /// <summary>
+    /// Re-validates the upload destination and atomically moves <paramref name="sourceTempPath"/>
+    /// (an already-fully-received file owned by the caller) into the final archive location.
+    /// </summary>
+    ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath);
 
     ArchiveListing Rename(string categoryKey, string itemId, string name);
 

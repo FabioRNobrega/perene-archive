@@ -1,7 +1,10 @@
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.Extensions.Logging
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject PersistentPlayerState PlayerState
 @inject NavigationManager Navigation
+@inject ILogger<ArchiveBrowser> Logger
 @implements IDisposable
 
 <section class="card overflow-hidden" aria-labelledby="@HeadingId">
@@ -105,6 +108,7 @@
                     <i class="bi bi-upload fs-5 lh-1" aria-hidden="true"></i>
                 </button>
                 <InputFile @ref="_fileInput" OnChange="OnFilesSelected" multiple class="visually-hidden" aria-hidden="true" />
+                <InputFile @ref="_resumeFileInput" OnChange="OnResumeFileSelected" class="visually-hidden" aria-hidden="true" aria-label="Reselect file to resume upload" />
             </div>
         }
         @if (Category == "trash")
@@ -125,23 +129,74 @@
         <div class="list-group list-group-flush border-top" aria-label="Upload status">
             @foreach (var upload in _uploads)
             {
-                <div class="list-group-item d-flex align-items-center justify-content-between gap-2">
-                    <span class="text-truncate">@upload.Name</span>
-                    @switch (upload.Status)
-                    {
-                        case UploadStatus.Uploading:
-                            <span class="badge text-bg-secondary d-inline-flex align-items-center gap-1">
+                <div class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
+                    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                        <span class="text-truncate fw-semibold">@upload.FileName</span>
+                        <span class="badge @UploadStatusBadgeClass(upload.Status) d-inline-flex align-items-center gap-1">
+                            @if (upload.Status is ArchiveUploadItemStatus.Uploading or ArchiveUploadItemStatus.Completing)
+                            {
                                 <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                                Uploading
-                            </span>
-                            break;
-                        case UploadStatus.Done:
-                            <span class="badge text-bg-success">Done</span>
-                            break;
-                        case UploadStatus.Error:
-                            <span class="badge text-bg-danger" title="@upload.ErrorMessage">Error</span>
-                            break;
+                            }
+                            @UploadStatusLabel(upload.Status)
+                        </span>
+                    </div>
+                    <div class="progress" role="progressbar"
+                         aria-label="@($"Upload progress for {upload.FileName}")"
+                         aria-valuenow="@upload.PercentComplete.ToString("0")" aria-valuemin="0" aria-valuemax="100"
+                         style="height: 0.5rem;">
+                        <div class="progress-bar @(upload.Status == ArchiveUploadItemStatus.Error ? "bg-danger" : "")"
+                             style="width:@(upload.PercentComplete.ToString("0.#"))%;"></div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 small text-body-secondary">
+                        <span>@FormatSize(upload.AcknowledgedBytes) / @FormatSize(upload.TotalBytes) (@upload.PercentComplete.ToString("0")%)</span>
+                        @{
+                            var rate = upload.ComputeBytesPerSecond(DateTimeOffset.UtcNow);
+                            var eta = upload.EstimateRemaining(DateTimeOffset.UtcNow);
+                        }
+                        @if (rate is > 0)
+                        {
+                            <span>@FormatSize((long)rate.Value)/s</span>
+                        }
+                        @if (eta is not null && upload.Status == ArchiveUploadItemStatus.Uploading)
+                        {
+                            <span>ETA @FormatDuration(eta.Value.TotalSeconds)</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(upload.ErrorMessage))
+                    {
+                        <div class="alert alert-warning py-1 px-2 mb-0 small" role="alert">@upload.ErrorMessage</div>
                     }
+                    <div class="d-flex gap-2">
+                        @if (upload.Status is ArchiveUploadItemStatus.Interrupted or ArchiveUploadItemStatus.Error)
+                        {
+                            <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" type="button"
+                                    @onclick="() => StartResume(upload)">
+                                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                                Resume
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" type="button"
+                                    @onclick="() => CancelUploadAsync(upload)">
+                                <i class="bi bi-x-circle" aria-hidden="true"></i>
+                                Cancel
+                            </button>
+                        }
+                        else if (upload.Status == ArchiveUploadItemStatus.Uploading)
+                        {
+                            <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" type="button"
+                                    @onclick="() => CancelUploadAsync(upload)">
+                                <i class="bi bi-x-circle" aria-hidden="true"></i>
+                                Cancel
+                            </button>
+                        }
+                        else if (upload.Status == ArchiveUploadItemStatus.Done)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" type="button"
+                                    @onclick="() => _uploads.Remove(upload)">
+                                <i class="bi bi-check2" aria-hidden="true"></i>
+                                Dismiss
+                            </button>
+                        }
+                    </div>
                 </div>
             }
         </div>
@@ -542,8 +597,12 @@
 
     private readonly FolderForm _createFolder = new();
     private readonly FileForm _createFile = new();
-    private readonly List<UploadItem> _uploads = [];
+    private readonly List<ArchiveUploadItemState> _uploads = [];
+    private readonly Dictionary<ArchiveUploadItemState, (ElementReference Element, int FileIndex)> _uploadFileRefs = [];
     private InputFile? _fileInput;
+    private InputFile? _resumeFileInput;
+    private ArchiveUploadItemState? _resumeTarget;
+    private IJSObjectReference? _uploadInteropModule;
     private ArchiveListingDto? _listing;
     private ArchiveItemDto? _renaming;
     private ArchiveItemDto? _moving;
@@ -604,6 +663,16 @@
         {
             // The modal remains usable with Bootstrap's data attributes if JS interop import fails.
         }
+
+        try
+        {
+            _uploadInteropModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/archiveUploadInterop.js");
+        }
+        catch (JSException exception)
+        {
+            // Uploads remain disabled (Resume/new uploads report an error) if JS interop import fails.
+            Logger.LogWarning(exception, "Failed to import archiveUploadInterop.js; uploads will report an error.");
+        }
     }
 
     private void OnFilterChanged(string value) => _filterText = value;
@@ -629,6 +698,11 @@
             if (restartPolling)
             {
                 RestartMediaPollingIfNeeded();
+            }
+
+            if (showLoading && _listing?.CanCreateFolder == true)
+            {
+                await RestoreIncompleteUploadsAsync(folderId);
             }
         }
         catch (HttpRequestException)
@@ -843,48 +917,377 @@
 
     private async Task OnFilesSelected(InputFileChangeEventArgs e)
     {
-        foreach (var file in e.GetMultipleFiles(e.FileCount))
+        if (_fileInput?.Element is not { } inputElement)
         {
-            var upload = new UploadItem(file.Name);
-            _uploads.Add(upload);
+            return;
+        }
+
+        var files = e.GetMultipleFiles(e.FileCount);
+        for (var index = 0; index < files.Count; index++)
+        {
+            var file = files[index];
+            var state = new ArchiveUploadItemState { FileName = file.Name, TotalBytes = file.Size };
+            _uploads.Add(state);
+            _uploadFileRefs[state] = (inputElement, index);
             StateHasChanged();
 
-            try
-            {
-                using var content = new MultipartFormDataContent();
-                await using var stream = file.OpenReadStream(MaxUploadFileSizeBytes);
-                using var streamContent = new StreamContent(stream);
-                content.Add(streamContent, "file", file.Name);
+            await CreateUploadSessionAsync(state);
+        }
+    }
 
-                var url = $"api/archive/{Category}/upload";
-                if (!string.IsNullOrWhiteSpace(_listing?.CurrentFolderId))
-                {
-                    url += $"?parentId={Uri.EscapeDataString(_listing!.CurrentFolderId!)}";
-                }
-
-                using var response = await Http.PostAsync(url, content);
-                if (response.IsSuccessStatusCode)
-                {
-                    upload.Status = UploadStatus.Done;
-                    await LoadAsync(_listing?.CurrentFolderId, restartPolling: true, showLoading: false);
-                }
-                else
-                {
-                    upload.Status = UploadStatus.Error;
-                    upload.ErrorMessage = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                        ? "An item with that name already exists."
-                        : "This file type is not supported or could not be uploaded.";
-                }
-            }
-            catch (Exception exception) when (exception is HttpRequestException or IOException)
+    private async Task CreateUploadSessionAsync(ArchiveUploadItemState state)
+    {
+        try
+        {
+            var request = new ArchiveUploadCreateRequest(_listing?.CurrentFolderId, state.FileName, state.TotalBytes);
+            using var response = await Http.PostAsJsonAsync($"api/archive/{Category}/uploads", request);
+            if (!response.IsSuccessStatusCode)
             {
-                upload.Status = UploadStatus.Error;
-                upload.ErrorMessage = "The upload could not reach the server.";
+                state.Status = ArchiveUploadItemStatus.Error;
+                state.ErrorMessage = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "An item with that name already exists."
+                    : "This file type is not supported or could not be uploaded.";
+                StateHasChanged();
+                return;
             }
 
+            var session = await response.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
+            if (session is null)
+            {
+                state.Status = ArchiveUploadItemStatus.Error;
+                state.ErrorMessage = "The upload session could not be created.";
+                StateHasChanged();
+                return;
+            }
+
+            state.UploadId = session.Id;
+            state.ChunkSizeBytes = session.ChunkSizeBytes;
+            await RunUploadLoopAsync(state);
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Failed to create upload session for {FileName}.", state.FileName);
+            state.Status = ArchiveUploadItemStatus.Error;
+            state.ErrorMessage = "The upload could not reach the server.";
             StateHasChanged();
         }
     }
+
+    private sealed class ArchiveUploadFileUnavailableException : Exception;
+
+    // Tri-state: null = not yet determined for this page load, true/false = decided after the first chunk.
+    // Chromium's SetBrowserRequestStreamingEnabled(true) requires HTTPS + HTTP/2; over the plain HTTP/1.1
+    // Compose dev transport it fails outright (net::ERR_ALPN_NEGOTIATION_FAILED) rather than falling back,
+    // so the very first chunk decides it for the rest of the page's lifetime and every upload thereafter
+    // uses the bounded, buffered fallback directly.
+    private bool? _requestStreamingSupported;
+
+    private async Task RunUploadLoopAsync(ArchiveUploadItemState state)
+    {
+        if (!_uploadFileRefs.TryGetValue(state, out var fileRef) || _uploadInteropModule is null || state.UploadId is null)
+        {
+            Logger.LogWarning(
+                "Cannot start upload chunk loop for {FileName}: fileRef present={HasFileRef}, interopModule present={HasInterop}, uploadId={UploadId}",
+                state.FileName, _uploadFileRefs.ContainsKey(state), _uploadInteropModule is not null, state.UploadId);
+            state.Status = ArchiveUploadItemStatus.Interrupted;
+            state.ErrorMessage = "The selected file is no longer available. Reselect it to resume.";
+            StateHasChanged();
+            return;
+        }
+
+        state.Status = ArchiveUploadItemStatus.Uploading;
+        state.StartedAt ??= DateTimeOffset.UtcNow;
+        StateHasChanged();
+
+        while (state.AcknowledgedBytes < state.TotalBytes)
+        {
+            var offset = state.AcknowledgedBytes;
+            var remaining = state.TotalBytes - offset;
+            var chunkLength = Math.Min(state.ChunkSizeBytes ?? DefaultChunkSizeBytes, remaining);
+
+            try
+            {
+                var useStreaming = _requestStreamingSupported != false;
+                HttpResponseMessage response;
+                try
+                {
+                    response = await SendChunkAsync(fileRef, state, offset, chunkLength, useStreaming);
+                    if (useStreaming)
+                    {
+                        _requestStreamingSupported = true;
+                    }
+                }
+                catch (HttpRequestException exception) when (useStreaming && _requestStreamingSupported is null)
+                {
+                    Logger.LogWarning(
+                        exception,
+                        "Browser request streaming failed for {FileName} (likely HTTP/1.1 without TLS+HTTP/2); " +
+                        "falling back to buffered chunk uploads for the rest of this page load.",
+                        state.FileName);
+                    _requestStreamingSupported = false;
+                    response = await SendChunkAsync(fileRef, state, offset, chunkLength, useStreaming: false);
+                }
+
+                using (response)
+                {
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        Logger.LogWarning(
+                            "Upload chunk for {FileName} at offset {Offset} rejected with status {StatusCode}.",
+                            state.FileName, offset, response.StatusCode);
+                        ApplyChunkFailure(state, response.StatusCode);
+                        return;
+                    }
+
+                    var dto = await response.Content.ReadFromJsonAsync<ArchiveUploadSessionDto>();
+                    if (dto is null)
+                    {
+                        Logger.LogWarning(
+                            "Upload chunk for {FileName} at offset {Offset} returned an empty confirmation body.",
+                            state.FileName, offset);
+                        state.Status = ArchiveUploadItemStatus.Interrupted;
+                        state.ErrorMessage = "The upload could not be confirmed by the server.";
+                        StateHasChanged();
+                        return;
+                    }
+
+                    state.AcknowledgedBytes = dto.ReceivedBytes;
+                    StateHasChanged();
+                }
+            }
+            catch (ArchiveUploadFileUnavailableException)
+            {
+                Logger.LogWarning(
+                    "Upload chunk slice returned null for {FileName} at offset {Offset}/{TotalBytes}.",
+                    state.FileName, offset, state.TotalBytes);
+                state.Status = ArchiveUploadItemStatus.Interrupted;
+                state.ErrorMessage = "The selected file is no longer available. Reselect it to resume.";
+                StateHasChanged();
+                return;
+            }
+            catch (Exception exception) when (exception is HttpRequestException or IOException or JSException or TaskCanceledException)
+            {
+                Logger.LogWarning(
+                    exception,
+                    "Upload chunk for {FileName} at offset {Offset} failed with {ExceptionType}.",
+                    state.FileName, offset, exception.GetType().Name);
+                state.Status = ArchiveUploadItemStatus.Interrupted;
+                state.ErrorMessage = "The upload was interrupted. Reselect the file to resume.";
+                StateHasChanged();
+                return;
+            }
+        }
+
+        await FinishUploadAsync(state);
+    }
+
+    private async Task<HttpResponseMessage> SendChunkAsync(
+        (ElementReference Element, int FileIndex) fileRef,
+        ArchiveUploadItemState state,
+        long offset,
+        long chunkLength,
+        bool useStreaming)
+    {
+        await using var streamRef = await _uploadInteropModule!.InvokeAsync<IJSStreamReference>(
+            "sliceToStreamRef", fileRef.Element, fileRef.FileIndex, offset, chunkLength);
+        if (streamRef is null)
+        {
+            throw new ArchiveUploadFileUnavailableException();
+        }
+
+        await using var sliceStream = await streamRef.OpenReadStreamAsync(chunkLength);
+        var url = $"api/archive/{Category}/uploads/{Uri.EscapeDataString(state.UploadId!)}/chunk?offset={offset}&length={chunkLength}";
+
+        if (useStreaming)
+        {
+            using var content = new StreamContent(sliceStream);
+            using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = content };
+            request.SetBrowserRequestStreamingEnabled(true);
+            return await Http.SendAsync(request);
+        }
+
+        // Bounded, buffered fallback for transports without HTTPS + HTTP/2 (no browser request streaming):
+        // each chunk is already size-limited by the adaptive chunk policy, so buffering one chunk in memory
+        // is safe even though the whole file never is.
+        var buffer = new byte[chunkLength];
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = await sliceStream.ReadAsync(buffer.AsMemory(totalRead));
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        using var bufferedContent = new ByteArrayContent(buffer, 0, totalRead);
+        using var bufferedRequest = new HttpRequestMessage(HttpMethod.Put, url) { Content = bufferedContent };
+        return await Http.SendAsync(bufferedRequest);
+    }
+
+    private void ApplyChunkFailure(ArchiveUploadItemState state, System.Net.HttpStatusCode statusCode)
+    {
+        var (status, message) = statusCode switch
+        {
+            System.Net.HttpStatusCode.Conflict =>
+                (ArchiveUploadItemStatus.Interrupted, "This upload no longer matches the server offset. Reselect the file to resume."),
+            System.Net.HttpStatusCode.NotFound =>
+                (ArchiveUploadItemStatus.Error, "This upload session has expired. Start a new upload."),
+            System.Net.HttpStatusCode.BadRequest =>
+                (ArchiveUploadItemStatus.Error, "The upload could not be accepted."),
+            _ => (ArchiveUploadItemStatus.Interrupted, "The upload could not reach the server. Reselect the file to resume.")
+        };
+
+        state.Status = status;
+        state.ErrorMessage = message;
+        StateHasChanged();
+    }
+
+    private async Task FinishUploadAsync(ArchiveUploadItemState state)
+    {
+        state.Status = ArchiveUploadItemStatus.Completing;
+        StateHasChanged();
+
+        try
+        {
+            using var response = await Http.PostAsync($"api/archive/{Category}/uploads/{Uri.EscapeDataString(state.UploadId!)}/complete", content: null);
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.LogWarning(
+                    "Upload completion for {FileName} rejected with status {StatusCode}.", state.FileName, response.StatusCode);
+                state.Status = ArchiveUploadItemStatus.Error;
+                state.ErrorMessage = "The upload could not be completed.";
+                StateHasChanged();
+                return;
+            }
+
+            _listing = await response.Content.ReadFromJsonAsync<ArchiveListingDto>();
+            _folderChoices = _listing?.Items.Where(item => item.Kind == ArchiveItemKind.Folder).ToList() ?? [];
+            state.Status = ArchiveUploadItemStatus.Done;
+            _uploadFileRefs.Remove(state);
+            RestartMediaPollingIfNeeded();
+            StateHasChanged();
+        }
+        catch (HttpRequestException exception)
+        {
+            Logger.LogWarning(exception, "Failed to reach server to complete upload for {FileName}.", state.FileName);
+            state.Status = ArchiveUploadItemStatus.Error;
+            state.ErrorMessage = "The upload could not reach the server to complete.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task RestoreIncompleteUploadsAsync(string? folderId)
+    {
+        try
+        {
+            var url = $"api/archive/{Category}/uploads";
+            if (!string.IsNullOrWhiteSpace(folderId))
+            {
+                url += $"?parentId={Uri.EscapeDataString(folderId)}";
+            }
+
+            var sessions = await Http.GetFromJsonAsync<List<ArchiveUploadSessionDto>>(url) ?? [];
+            foreach (var session in sessions)
+            {
+                if (_uploads.Any(existing => existing.UploadId == session.Id))
+                {
+                    continue;
+                }
+
+                _uploads.Add(new ArchiveUploadItemState
+                {
+                    FileName = session.FileName,
+                    TotalBytes = session.TotalBytes,
+                    UploadId = session.Id,
+                    AcknowledgedBytes = session.ReceivedBytes,
+                    ChunkSizeBytes = session.ChunkSizeBytes,
+                    Status = ArchiveUploadItemStatus.Interrupted,
+                    ErrorMessage = "Reselect the original file to resume."
+                });
+            }
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
+
+    private async Task StartResume(ArchiveUploadItemState state)
+    {
+        _resumeTarget = state;
+        if (_resumeFileInput?.Element is not { } element || _bootstrapModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _bootstrapModule.InvokeVoidAsync("clickElement", element);
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task OnResumeFileSelected(InputFileChangeEventArgs e)
+    {
+        var target = _resumeTarget;
+        _resumeTarget = null;
+        if (target is null || _resumeFileInput?.Element is not { } inputElement)
+        {
+            return;
+        }
+
+        var file = e.File;
+        if (!target.MatchesForResume(file.Name, file.Size))
+        {
+            target.ErrorMessage = "The reselected file does not match the interrupted upload's name and size.";
+            StateHasChanged();
+            return;
+        }
+
+        target.ErrorMessage = null;
+        _uploadFileRefs[target] = (inputElement, 0);
+        await RunUploadLoopAsync(target);
+    }
+
+    private async Task CancelUploadAsync(ArchiveUploadItemState state)
+    {
+        if (state.UploadId is not null)
+        {
+            try
+            {
+                await Http.DeleteAsync($"api/archive/{Category}/uploads/{Uri.EscapeDataString(state.UploadId)}");
+            }
+            catch (HttpRequestException)
+            {
+            }
+        }
+
+        _uploads.Remove(state);
+        _uploadFileRefs.Remove(state);
+        StateHasChanged();
+    }
+
+    private static string UploadStatusBadgeClass(ArchiveUploadItemStatus status) => status switch
+    {
+        ArchiveUploadItemStatus.Done => "text-bg-success",
+        ArchiveUploadItemStatus.Error => "text-bg-danger",
+        ArchiveUploadItemStatus.Interrupted => "text-bg-warning",
+        _ => "text-bg-secondary"
+    };
+
+    private static string UploadStatusLabel(ArchiveUploadItemStatus status) => status switch
+    {
+        ArchiveUploadItemStatus.Pending => "Pending",
+        ArchiveUploadItemStatus.Uploading => "Uploading",
+        ArchiveUploadItemStatus.Interrupted => "Interrupted",
+        ArchiveUploadItemStatus.Completing => "Completing",
+        ArchiveUploadItemStatus.Done => "Done",
+        _ => "Error"
+    };
 
     private void StartRename(ArchiveItemDto item)
     {
@@ -1227,19 +1630,5 @@
         public string Extension { get; set; } = ".txt";
     }
 
-    private enum UploadStatus
-    {
-        Uploading,
-        Done,
-        Error
-    }
-
-    private sealed class UploadItem(string name)
-    {
-        public string Name { get; } = name;
-        public UploadStatus Status { get; set; } = UploadStatus.Uploading;
-        public string? ErrorMessage { get; set; }
-    }
-
-    private const long MaxUploadFileSizeBytes = 2L * 1024 * 1024 * 1024;
+    private const long DefaultChunkSizeBytes = 5L * 1024 * 1024;
 }

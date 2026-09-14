@@ -105,54 +105,89 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
-    public async Task SaveUploadedFileAsync_writes_the_uploaded_content_and_is_readable_afterward()
+    public void ValidateUploadDestination_resolves_the_final_path_without_writing_anything()
     {
         using var root = CreateArchive();
         var service = CreateService(root.Path);
-        await using var content = new MemoryStream("hello world"u8.ToArray());
 
-        var listing = await service.SaveUploadedFileAsync("documents", null, "note.txt", content, CancellationToken.None);
+        var destination = service.ValidateUploadDestination("documents", null, "note.txt");
 
-        Assert.Contains(listing.Items, item => item.Name == "note.txt");
-        var writtenPath = Path.Combine(root.Path, "Documents", "note.txt");
-        Assert.True(File.Exists(writtenPath));
-        Assert.Equal("hello world", await File.ReadAllTextAsync(writtenPath));
-    }
-
-    [Fact]
-    public async Task SaveUploadedFileAsync_rejects_unsupported_extension_and_leaves_no_file_behind()
-    {
-        using var root = CreateArchive();
-        var service = CreateService(root.Path);
-        await using var content = new MemoryStream([1, 2, 3]);
-
-        await Assert.ThrowsAsync<ArchiveValidationException>(
-            () => service.SaveUploadedFileAsync("documents", null, "malware.exe", content, CancellationToken.None));
-
+        Assert.Equal(Path.Combine(root.Path, "Documents", "note.txt"), destination.FinalPath);
         Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(root.Path, "Documents")));
     }
 
     [Fact]
-    public async Task SaveUploadedFileAsync_throws_on_name_collision()
+    public void ValidateUploadDestination_rejects_unsupported_extension()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+
+        Assert.Throws<ArchiveValidationException>(() => service.ValidateUploadDestination("documents", null, "malware.exe"));
+    }
+
+    [Fact]
+    public void ValidateUploadDestination_throws_on_name_collision()
     {
         using var root = CreateArchive();
         awaitFile(Path.Combine(root.Path, "Documents", "note.txt"));
         var service = CreateService(root.Path);
-        await using var content = new MemoryStream("new"u8.ToArray());
 
-        await Assert.ThrowsAsync<ArchiveConflictException>(
-            () => service.SaveUploadedFileAsync("documents", null, "note.txt", content, CancellationToken.None));
+        Assert.Throws<ArchiveConflictException>(() => service.ValidateUploadDestination("documents", null, "note.txt"));
     }
 
     [Fact]
-    public async Task SaveUploadedFileAsync_rejects_a_path_traversal_style_name()
+    public void ValidateUploadDestination_rejects_a_path_traversal_style_name()
     {
         using var root = CreateArchive();
         var service = CreateService(root.Path);
-        await using var content = new MemoryStream([1, 2, 3]);
 
-        await Assert.ThrowsAsync<ArchiveValidationException>(
-            () => service.SaveUploadedFileAsync("documents", null, "../evil.txt", content, CancellationToken.None));
+        Assert.Throws<ArchiveValidationException>(() => service.ValidateUploadDestination("documents", null, "../evil.txt"));
+    }
+
+    [Fact]
+    public void ValidateUploadDestination_throws_when_category_cannot_create_folders()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+
+        Assert.Throws<ArchiveForbiddenException>(() => service.ValidateUploadDestination("trash", null, "note.txt"));
+    }
+
+    [Fact]
+    public void PublishUploadedFile_moves_the_source_into_the_validated_destination_and_is_readable_afterward()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"upload-source-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(sourcePath, "hello world");
+
+        var listing = service.PublishUploadedFile("documents", null, "note.txt", sourcePath);
+
+        Assert.Contains(listing.Items, item => item.Name == "note.txt");
+        var writtenPath = Path.Combine(root.Path, "Documents", "note.txt");
+        Assert.True(File.Exists(writtenPath));
+        Assert.Equal("hello world", File.ReadAllText(writtenPath));
+        Assert.False(File.Exists(sourcePath));
+    }
+
+    [Fact]
+    public void PublishUploadedFile_rejects_a_collision_and_leaves_the_source_file_untouched()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "note.txt"));
+        var service = CreateService(root.Path);
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"upload-source-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(sourcePath, "new");
+
+        try
+        {
+            Assert.Throws<ArchiveConflictException>(() => service.PublishUploadedFile("documents", null, "note.txt", sourcePath));
+            Assert.True(File.Exists(sourcePath));
+        }
+        finally
+        {
+            File.Delete(sourcePath);
+        }
     }
 
     [Fact]

@@ -55,6 +55,14 @@ builder.Services.AddOptions<VideoCompositionOptions>()
     .Validate(VideoCompositionOptions.HasPositiveQueueCapacity, "VideoComposition:QueueCapacity must be greater than zero.")
     .Validate(VideoCompositionOptions.HasPositiveTransitionDuration, "VideoComposition:TransitionDurationSeconds must be greater than zero.")
     .ValidateOnStart();
+builder.Services.AddOptions<ArchiveUploadOptions>()
+    .Bind(builder.Configuration.GetSection(ArchiveUploadOptions.SectionName))
+    .Validate(ArchiveUploadOptions.HasPositiveTtl, "ArchiveUpload:SessionTtlHours must be greater than zero.")
+    .Validate(ArchiveUploadOptions.HasPositiveCleanupInterval, "ArchiveUpload:CleanupIntervalMinutes must be greater than zero.")
+    .Validate(ArchiveUploadOptions.HasValidMaxSize, "ArchiveUpload:MaxDeclaredSizeBytes must be at least 10 GB.")
+    .Validate(ArchiveUploadOptions.HasPositiveChunkSizes, "ArchiveUpload chunk sizes must be positive and strictly increasing.")
+    .Validate(ArchiveUploadOptions.HasIncreasingThresholds, "ArchiveUpload thresholds must be positive, strictly increasing, and within the maximum size.")
+    .ValidateOnStart();
 builder.Services.AddOptions<HoverPreviewOptions>()
     .Bind(builder.Configuration.GetSection(HoverPreviewOptions.SectionName))
     .Validate(HoverPreviewOptions.HasPositiveWidth, "HoverPreview:Width must be greater than zero.")
@@ -96,6 +104,8 @@ builder.Services.AddSingleton<ICompositionGenerator, FfmpegCompositionGenerator>
 builder.Services.AddHostedService<CompositionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
+builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
+builder.Services.AddHostedService<ArchiveUploadCleanupWorker>();
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
 builder.Services.AddSingleton<INetworkMetricsService, NetworkMetricsService>();
 builder.Services.AddSingleton<IActiveClientTracker, ActiveClientTracker>();
