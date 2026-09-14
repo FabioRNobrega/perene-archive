@@ -45,6 +45,7 @@ publish/
 *.pfx
 *.key
 *.pem
+/https/
 secrets.json
 appsettings.*.local.json
 **/Properties/PublishProfiles/*.pubxml

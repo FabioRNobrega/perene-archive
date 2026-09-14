@@ -13,11 +13,11 @@ DOCKER_HOST := $(shell \
 	fi)
 export DOCKER_HOST
 
-.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url
+.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert
 
 help:
 	@printf '%s\n' \
-		'Before running: copy .env.example to .env and set VIDEO_ROOT' \
+		'Before running: copy .env.example to .env and set PERENE_ARCHIVE_ROOT' \
 		'make docker-build              Build the .NET 10 SDK image' \
 		'make dotnet-new                Generate the Blazor solution and xUnit project' \
 		'make docker-run                Start the app with hot reload' \
@@ -29,7 +29,8 @@ help:
 		'make docker-exec               Open the running web container shell' \
 		'make dotnet ARGS="build"       Run any dotnet command in Docker' \
 		'make test                      Run tests in an isolated stack' \
-		'make get-url                   Show the URL to access the app from other LAN devices'
+		'make get-url                   Show the URL to access the app from other LAN devices' \
+		'make https-cert                Generate the optional self-signed LAN HTTPS certificate'
 
 docker-env:
 	@echo "export DOCKER_HOST=$(DOCKER_HOST)"
@@ -82,6 +83,10 @@ docker-test:
 docker-test-shell:
 	$(COMPOSE) -p $(TEST_COMPOSE_PROJECT) -f docker-compose.test.yml run --rm --build tests bash
 
+https-cert:
+	@mkdir -p https
+	$(COMPOSE) -p $(COMPOSE_PROJECT) run --rm --no-deps --build webapp sh scripts/generate-https-cert.sh
+
 get-url:
 	@iface=$$(ip -o link show | awk -F': ' '{print $$2}' | grep -m1 '^wl'); \
 	if [ -z "$$iface" ]; then \
@@ -95,11 +100,21 @@ get-url:
 	fi; \
 	port=$$(grep -m1 '^WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
 	port=$${port:-8080}; \
-	echo "Access PereneArchive on http://$$ip:$$port"
+	echo "Access PereneArchive on http://$$ip:$$port"; \
+	if [ -f https/perene.pfx ]; then \
+		httpsPort=$$(grep -m1 '^HTTPS_WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
+		httpsPort=$${httpsPort:-8443}; \
+		echo "Access PereneArchive on https://$$ip:$$httpsPort (import ./https/perene.crt on the client first)"; \
+	fi
 
 get-url-nas:
 	@iface=$$(ip route | awk '/^default/ {print $$5; exit}'); \
 	ip=$$(ip -4 -o addr show "$$iface" | awk '{print $$4}' | cut -d/ -f1); \
 	port=$$(grep -m1 '^WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
 	port=$${port:-8080}; \
-	echo "Access PereneArchive on http://$$ip:$$port"
+	echo "Access PereneArchive on http://$$ip:$$port"; \
+	if [ -f https/perene.pfx ]; then \
+		httpsPort=$$(grep -m1 '^HTTPS_WEBAPP_PORT=' .env 2>/dev/null | cut -d= -f2); \
+		httpsPort=$${httpsPort:-8443}; \
+		echo "Access PereneArchive on https://$$ip:$$httpsPort (import ./https/perene.crt on the client first)"; \
+	fi

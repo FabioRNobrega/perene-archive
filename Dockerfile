@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg openssl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace

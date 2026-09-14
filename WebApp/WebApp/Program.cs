@@ -70,6 +70,27 @@ builder.Services.AddOptions<HoverPreviewOptions>()
     .Validate(HoverPreviewOptions.HasPositiveSegmentSeconds, "HoverPreview:SegmentSeconds must be greater than zero.")
     .Validate(HoverPreviewOptions.HasPositiveQueueCapacity, "HoverPreview:QueueCapacity must be greater than zero.")
     .ValidateOnStart();
+builder.Services.AddOptions<KestrelHttpsOptions>()
+    .Bind(builder.Configuration.GetSection(KestrelHttpsOptions.SectionName))
+    .Validate(KestrelHttpsOptions.HasPositivePort, "HttpsCertificate:Port must be greater than zero.")
+    .Validate(KestrelHttpsOptions.HasPasswordWhenPathConfigured, "HttpsCertificate:Password is required when HttpsCertificate:Path is set.")
+    .ValidateOnStart();
+builder.WebHost.ConfigureKestrel((context, serverOptions) =>
+    KestrelHttpsEndpointConfigurator.TryConfigure(
+        serverOptions,
+        context.Configuration.GetSection(KestrelHttpsOptions.SectionName).Get<KestrelHttpsOptions>() ?? new()));
+// Explicitly tells UseHttpsRedirection which port to redirect to: Kestrel's own
+// IServerAddressesFeature detection is unreliable behind Docker's port mapping and is not
+// populated at all by WebApplicationFactory's in-memory TestServer, so without this the
+// redirect silently no-ops even when the HTTPS endpoint above is enabled.
+builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionOptions>(options =>
+{
+    var httpsOptions = builder.Configuration.GetSection(KestrelHttpsOptions.SectionName).Get<KestrelHttpsOptions>() ?? new();
+    if (KestrelHttpsOptions.IsEnabled(httpsOptions))
+    {
+        options.HttpsPort = httpsOptions.Port;
+    }
+});
 builder.Services.AddSingleton<IVideoLibraryService, VideoLibraryService>();
 builder.Services.AddSingleton<ThumbnailCache>();
 builder.Services.AddSingleton<ThumbnailCoordinator>();

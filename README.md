@@ -17,6 +17,7 @@ Table of contents
 - [Install](#install)
 - [Usage](#usage)
 - [Tests](#tests)
+- [HTTPS / LAN Request Streaming (optional)](#https--lan-request-streaming-optional)
 - [Docker Console](#docker-console)
 - [Commercial Licensing and Support](#commercial-licensing-and-support)
 - [Troubleshooting](#troubleshooting)
@@ -40,6 +41,7 @@ Table of contents
 | Archive management | ✅ | Browse archive categories; create folders and `.txt`/`.md` text files; upload video/music/image/book/text/PDF files via resumable, sequential chunked sessions with acknowledged progress, rate/ETA, and Resume/Cancel recovery after an interruption or restart; rename, move, and send supported files and folders to Trash; permanently empty Trash with a confirmation prompt. |
 | Appearance | ✅ | Dark and Kindle-paper light themes, responsive layout, and Fill-tab video mode. |
 | System dashboard | ✅ | The home page (`/`) shows System, Memory, Storage, Network, PereneArchive, Docker, Health, History, and Alerts cards with a manual Refresh control, backed by dedicated `/api/dashboard/*` endpoints. |
+| HTTPS / LAN request streaming | ✅ | Optional self-signed HTTPS + HTTP/2 Kestrel endpoint (`make https-cert`) so chunked archive uploads can stream instead of buffering; HTTP-only by default. |
 
 ## Install
 
@@ -47,7 +49,7 @@ Table of contents
 
 2. Ensure Docker Compose or Podman Compose is available.
 
-3. Create the host archive layout. By default, the app uses `/home/PereneArchive`; alternatively, copy `.env.example` to `.env` and set `VIDEO_ROOT` to an absolute path on the Docker host.
+3. Create the host archive layout. By default, the app uses `/home/PereneArchive`; alternatively, copy `.env.example` to `.env` and set `PERENE_ARCHIVE_ROOT` to an absolute path on the Docker host.
 
    The archive root contains folders such as `Videos`, `Pictures`, `Music`, `Documents`, and `Books`. The video workflow also uses `Videos/Cuts` and `Videos/VideoComposition`.
 
@@ -105,6 +107,24 @@ To run another .NET command inside the Docker environment:
 make dotnet ARGS="build"
 ```
 
+## HTTPS / LAN Request Streaming (optional)
+
+Chromium's browser request streaming (used by chunked archive uploads) requires HTTPS + HTTP/2. By default the app serves HTTP-only and uploads fall back to buffered chunks. To enable streaming uploads on your LAN:
+
+1. In `.env`, set `HTTPS_SAN_HOSTS` to your NAS's LAN IP and/or hostname, and set `HTTPS_CERT_PASSWORD` to a password of your choosing.
+2. Generate the self-signed certificate:
+
+   ```bash
+   make https-cert
+   ```
+
+   This writes `./https/perene.key`, `./https/perene.crt`, and `./https/perene.pfx` (all gitignored).
+
+3. Restart the app (`make docker-run`). It now serves HTTPS on `HTTPS_WEBAPP_PORT` (default `8443`) in addition to HTTP, and every HTTP request is redirected to HTTPS.
+4. On each client device, manually import `./https/perene.crt` into the OS or browser certificate trust store — this app cannot automate that step. Until a device trusts the certificate, it will see the browser's normal self-signed-certificate warning when redirected to HTTPS.
+
+Unsetting `HTTPS_CERT_PASSWORD` (or removing `./https/perene.pfx`) and restarting reverts the app to HTTP-only with no other changes required.
+
 ## Docker Console
 
 Open a new application container shell:
@@ -131,7 +151,7 @@ Commercial use, managed deployment, customization, and technical support are ava
 
 ### The archive cannot be found
 
-Check that `VIDEO_ROOT` is an absolute host path, exists, and is readable by Docker or Podman. The expected folders must be available beneath it. Start from `.env.example` if you need to create a local `.env`.
+Check that `PERENE_ARCHIVE_ROOT` is an absolute host path, exists, and is readable by Docker or Podman. The expected folders must be available beneath it. Start from `.env.example` if you need to create a local `.env`.
 
 ### The app is not available on another local device
 
