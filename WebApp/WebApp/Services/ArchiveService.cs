@@ -171,16 +171,17 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return BuildListing(category, GetParentEntry(category, destination));
     }
 
-    public ArchiveListing Move(string categoryKey, string itemId, string? destinationFolderId)
+    public ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId)
     {
         var category = ResolveCategory(categoryKey);
         var item = ResolveItem(category, itemId);
         EnsureNotCategoryRoot(item);
-        var destinationFolder = ResolveFolder(category, destinationFolderId);
-        var destination = ContainedPath(category, Path.Combine(destinationFolder.PhysicalPath, item.Name));
+        var destinationCategory = ResolveCategory(destinationCategoryKey);
+        var destinationFolder = ResolveFolder(destinationCategory, destinationFolderId);
+        var destination = ContainedPath(destinationCategory, Path.Combine(destinationFolder.PhysicalPath, item.Name));
         if (IsSamePath(item.PhysicalPath, destination))
         {
-            return BuildListing(category, destinationFolder);
+            return BuildListing(category, GetParentEntry(category, item.PhysicalPath));
         }
 
         if (Exists(destination))
@@ -194,7 +195,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
 
         MovePhysical(item, destination);
-        return BuildListing(category, destinationFolder);
+        return BuildListing(category, GetParentEntry(category, item.PhysicalPath));
     }
 
     public ArchiveListing MoveToTrash(string categoryKey, string itemId)

@@ -28,7 +28,7 @@ internal interface IArchiveService
 
     ArchiveListing Rename(string categoryKey, string itemId, string name);
 
-    ArchiveListing Move(string categoryKey, string itemId, string? destinationFolderId);
+    ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId);
 
     ArchiveListing MoveToTrash(string categoryKey, string itemId);
 

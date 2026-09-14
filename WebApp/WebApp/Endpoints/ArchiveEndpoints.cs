@@ -298,7 +298,7 @@ internal static class ArchiveEndpoints
         IEpubBookService epubBookService,
         CancellationToken cancellationToken) =>
         await ExecuteAsync(() => ToDtoAsync(
-            archive.Move(category, id, request.DestinationFolderId),
+            archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId),
             thumbnailCoordinator,
             hoverPreviewCoordinator,
             subtitleCoordinator,

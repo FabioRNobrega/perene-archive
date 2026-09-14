@@ -82,7 +82,7 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName) => throw new NotSupportedException();
         public ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath) => throw new NotSupportedException();
         public ArchiveListing Rename(string categoryKey, string itemId, string name) => throw new NotSupportedException();
-        public ArchiveListing Move(string categoryKey, string itemId, string? destinationFolderId) => throw new NotSupportedException();
+        public ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveListing MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
         public ArchiveListing EmptyTrash(string categoryKey) => throw new NotSupportedException();
         public bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();

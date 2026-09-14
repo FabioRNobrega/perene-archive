@@ -214,6 +214,101 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void Move_relocates_item_within_the_same_category()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "note.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "Target"));
+        var service = CreateService(root.Path);
+        var file = service.List("documents", null).Items.Single(item => item.Name == "note.txt");
+        var target = service.List("documents", null).Items.Single(item => item.Name == "Target");
+
+        var listing = service.Move("documents", file.Id, "documents", target.Id);
+
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "Target", "note.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Documents", "note.txt")));
+        Assert.Equal("documents", listing.Category.Key);
+        Assert.DoesNotContain(listing.Items, item => item.Name == "note.txt");
+    }
+
+    [Fact]
+    public void Move_relocates_item_across_categories()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Downloads", "file.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Videos", "Target"));
+        var service = CreateService(root.Path);
+        var file = service.List("downloads", null).Items.Single(item => item.Name == "file.txt");
+        var target = service.List("videos", null).Items.Single(item => item.Name == "Target");
+
+        service.Move("downloads", file.Id, "videos", target.Id);
+
+        Assert.True(File.Exists(Path.Combine(root.Path, "Videos", "Target", "file.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "file.txt")));
+    }
+
+    [Fact]
+    public void Move_rejects_moving_a_folder_into_itself()
+    {
+        using var root = CreateArchive();
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "Folder"));
+        var service = CreateService(root.Path);
+        var folder = service.List("documents", null).Items.Single(item => item.Name == "Folder");
+
+        Assert.Throws<ArchiveValidationException>(() => service.Move("documents", folder.Id, "documents", folder.Id));
+    }
+
+    [Fact]
+    public void Move_rejects_moving_a_folder_into_its_own_descendant()
+    {
+        using var root = CreateArchive();
+        Directory.CreateDirectory(Path.Combine(root.Path, "Downloads", "A", "B"));
+        var service = CreateService(root.Path);
+        var folderA = service.List("downloads", null).Items.Single(item => item.Name == "A");
+        var folderB = service.List("downloads", folderA.Id).Items.Single(item => item.Name == "B");
+
+        Assert.Throws<ArchiveValidationException>(() => service.Move("downloads", folderA.Id, "downloads", folderB.Id));
+    }
+
+    [Fact]
+    public void Move_rejects_when_destination_already_has_an_item_with_the_same_name()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "note.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "Target"));
+        awaitFile(Path.Combine(root.Path, "Documents", "Target", "note.txt"));
+        var service = CreateService(root.Path);
+        var file = service.List("documents", null).Items.Single(item => item.Name == "note.txt");
+        var target = service.List("documents", null).Items.Single(item => item.Name == "Target");
+
+        Assert.Throws<ArchiveConflictException>(() => service.Move("documents", file.Id, "documents", target.Id));
+    }
+
+    [Fact]
+    public void Move_throws_not_found_for_an_unknown_destination_category()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Downloads", "file.txt"));
+        var service = CreateService(root.Path);
+        var file = service.List("downloads", null).Items.Single(item => item.Name == "file.txt");
+
+        Assert.Throws<ArchiveNotFoundException>(() => service.Move("downloads", file.Id, "not-a-real-category", null));
+    }
+
+    [Fact]
+    public void Move_returns_source_listing_after_cross_category_move()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Downloads", "file.txt"));
+        var service = CreateService(root.Path);
+        var file = service.List("downloads", null).Items.Single(item => item.Name == "file.txt");
+
+        var listing = service.Move("downloads", file.Id, "videos", null);
+
+        Assert.Equal("downloads", listing.Category.Key);
+    }
+
+    [Fact]
     public void MoveToTrash_moves_item_without_permanent_delete()
     {
         using var root = CreateArchive();

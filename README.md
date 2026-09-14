@@ -38,7 +38,7 @@ Table of contents
 | Books | ✅ | Read `.epub` books with progress, highlights, and notes. |
 | Text documents | ✅ | View and edit `.md`, `.markdown`, and `.txt` documents. |
 | PDF documents | ✅ | Browse and open `.pdf` documents. |
-| Archive management | ✅ | Browse archive categories; create folders and `.txt`/`.md` text files; upload video/music/image/book/text/PDF/subtitle files via resumable, sequential chunked sessions with acknowledged progress, rate/ETA, and Resume/Cancel recovery after an interruption or restart; rename, move, and send supported files and folders to Trash; permanently empty Trash with a confirmation prompt. |
+| Archive management | ✅ | Browse archive categories; create folders and `.txt`/`.md` text files; upload video/music/image/book/text/PDF/subtitle files via resumable, sequential chunked sessions with acknowledged progress, rate/ETA, and Resume/Cancel recovery after an interruption or restart; rename, move (via a Finder-style column picker that can browse any move-eligible category and folder depth, including moving items across categories), and send supported files and folders to Trash; permanently empty Trash with a confirmation prompt. |
 | Appearance | ✅ | Dark and Kindle-paper light themes, responsive layout, and Fill-tab video mode. |
 | System dashboard | ✅ | The home page (`/`) shows System, Memory, Storage, Network, PereneArchive, Docker, Health, History, and Alerts cards with a manual Refresh control, backed by dedicated `/api/dashboard/*` endpoints. |
 | HTTPS / LAN request streaming | ✅ | Optional self-signed HTTPS + HTTP/2 Kestrel endpoint (`make https-cert`) so chunked archive uploads can stream instead of buffering; HTTP-only by default. |

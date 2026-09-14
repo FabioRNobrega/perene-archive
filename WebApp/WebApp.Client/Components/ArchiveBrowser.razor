@@ -297,7 +297,7 @@
                                 <li>
                                     <button class="dropdown-item d-flex align-items-center"
                                             type="button"
-                                            disabled="@(_operationPending || _folderChoices.Count == 0)"
+                                            disabled="@_operationPending"
                                             @onclick="() => StartMove(item)"
                                             @onclick:stopPropagation="true">
                                         <i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>
@@ -523,31 +523,12 @@
 
 @if (_moving is not null)
 {
-    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@MoveModalLabelId" aria-modal="true" role="dialog">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="@MoveModalLabelId">Move @_moving.Name</h1>
-                    <button type="button" class="btn-close" aria-label="Close" disabled="@_operationPending" @onclick="CancelDialogs"></button>
-                </div>
-                <div class="modal-body">
-                    <label class="form-label" for="@MoveInputId">Move to</label>
-                    <select id="@MoveInputId" class="form-select" @bind="_moveDestinationId">
-                        <option value="">@Title root</option>
-                        @foreach (var folder in _folderChoices)
-                        {
-                            <option value="@folder.Id">@folder.Name</option>
-                        }
-                    </select>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-outline-secondary" type="button" disabled="@_operationPending" @onclick="CancelDialogs">Cancel</button>
-                    <button class="btn btn-primary" type="button" disabled="@_operationPending" @onclick="MoveAsync">Move</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="modal-backdrop fade show"></div>
+    <ArchiveMovePicker MovingItem="_moving"
+                        SourceCategory="@Category"
+                        SourceBreadcrumbs="_listing?.Breadcrumbs ?? []"
+                        OperationPending="_operationPending"
+                        OnCancel="CancelDialogs"
+                        OnConfirm="MoveAsync" />
 }
 
 @if (_renaming is not null)
@@ -617,9 +598,7 @@
     private ArchiveItemDto? _renaming;
     private ArchiveItemDto? _moving;
     private bool _confirmingEmptyTrash;
-    private List<ArchiveItemDto> _folderChoices = [];
     private string _renameName = string.Empty;
-    private string? _moveDestinationId;
     private string? _error;
     private IJSObjectReference? _bootstrapModule;
     private string? _previewingVideoId;
@@ -641,11 +620,9 @@
     private string CreateFileModalId => $"archive-{Category}-create-file-modal";
     private string CreateFileModalLabelId => $"archive-{Category}-create-file-modal-label";
     private string CreateFileInputId => $"archive-{Category}-create-file";
-    private string MoveModalLabelId => $"archive-{Category}-move-modal-label";
     private string RenameModalLabelId => $"archive-{Category}-rename-modal-label";
     private string EmptyTrashModalLabelId => $"archive-{Category}-empty-trash-modal-label";
     private string RenameInputId => $"archive-{Category}-rename";
-    private string MoveInputId => $"archive-{Category}-move";
     private string ArchiveStreamBasePath => $"api/archive/{Uri.EscapeDataString(Category)}/items";
 
     protected override async Task OnParametersSetAsync()
@@ -704,7 +681,6 @@
             }
 
             _listing = await Http.GetFromJsonAsync<ArchiveListingDto>(url);
-            _folderChoices = _listing?.Items.Where(item => item.Kind == ArchiveItemKind.Folder).ToList() ?? [];
             if (restartPolling)
             {
                 RestartMediaPollingIfNeeded();
@@ -1286,7 +1262,6 @@
             }
 
             _listing = await response.Content.ReadFromJsonAsync<ArchiveListingDto>();
-            _folderChoices = _listing?.Items.Where(item => item.Kind == ArchiveItemKind.Folder).ToList() ?? [];
             state.Status = ArchiveUploadItemStatus.Done;
             _uploadFileRefs.Remove(state);
             RestartMediaPollingIfNeeded();
@@ -1422,7 +1397,6 @@
     private void StartMove(ArchiveItemDto item)
     {
         _moving = item;
-        _moveDestinationId = null;
         _renaming = null;
         _confirmingEmptyTrash = false;
     }
@@ -1448,7 +1422,7 @@
         CancelDialogs();
     }
 
-    private async Task MoveAsync()
+    private async Task MoveAsync((string DestinationCategory, string? DestinationFolderId) destination)
     {
         if (_moving is null)
         {
@@ -1458,7 +1432,7 @@
         var id = _moving.Id;
         _ = await SendMutationAsync(() => Http.PatchAsJsonAsync(
             $"api/archive/{Category}/items/{Uri.EscapeDataString(id)}/location",
-            new MoveArchiveItemRequest(string.IsNullOrWhiteSpace(_moveDestinationId) ? null : _moveDestinationId)));
+            new MoveArchiveItemRequest(destination.DestinationCategory, destination.DestinationFolderId)));
         CancelDialogs();
     }
 
@@ -1503,7 +1477,6 @@
             }
 
             _listing = await response.Content.ReadFromJsonAsync<ArchiveListingDto>();
-            _folderChoices = _listing?.Items.Where(item => item.Kind == ArchiveItemKind.Folder).ToList() ?? [];
             RestartMediaPollingIfNeeded();
             return _listing;
         }
@@ -1556,7 +1529,6 @@
         _moving = null;
         _confirmingEmptyTrash = false;
         _renameName = string.Empty;
-        _moveDestinationId = null;
     }
 
     private static string FileIcon(ArchiveItemDto item) =>

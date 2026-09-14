@@ -1,0 +1,185 @@
+@using WebApp.Client.Models
+@inject HttpClient Http
+
+<div class="modal fade show d-block" tabindex="-1" aria-labelledby="@ModalLabelId" aria-modal="true" role="dialog">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="@ModalLabelId">Move @MovingItem.Name</h1>
+                <button type="button" class="btn-close" aria-label="Close" disabled="@OperationPending" @onclick="Cancel"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex overflow-x-auto overflow-y-hidden move-picker-columns" style="height: 24rem;">
+                    <div class="list-group flex-shrink-0 overflow-y-auto h-100 move-picker-column border-end rounded-0" style="width: 220px;">
+                        @foreach (var category in Categories)
+                        {
+                            <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(category.Key == _selectedCategoryKey ? "text-primary fw-semibold" : null)"
+                                    type="button"
+                                    disabled="@OperationPending"
+                                    @onclick="() => SelectCategoryAsync(category.Key)">
+                                <i class="bi @category.Icon" aria-hidden="true"></i>
+                                @category.DisplayName
+                            </button>
+                        }
+                    </div>
+                    @for (var columnIndex = 0; columnIndex < _folderColumns.Count; columnIndex++)
+                    {
+                        var capturedColumnIndex = columnIndex;
+                        var column = _folderColumns[columnIndex];
+                        var selectedChildId = columnIndex + 1 < _folderColumns.Count ? _folderColumns[columnIndex + 1].FolderId : null;
+                        <div class="list-group flex-shrink-0 overflow-y-auto h-100 move-picker-column border-end rounded-0" style="width: 220px;">
+                            @if (column.IsLoading)
+                            {
+                                <div class="list-group-item d-flex align-items-center justify-content-center py-4">
+                                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                                </div>
+                            }
+                            else if (column.Error is not null)
+                            {
+                                <div class="list-group-item text-danger small">@column.Error</div>
+                            }
+                            else if (column.Items.Count == 0)
+                            {
+                                <div class="list-group-item text-body-secondary small">No folders here.</div>
+                            }
+                            else
+                            {
+                                @foreach (var folder in column.Items)
+                                {
+                                    <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(folder.Id == selectedChildId ? "text-primary fw-semibold" : null)"
+                                            type="button"
+                                            disabled="@OperationPending"
+                                            @onclick="() => SelectFolderAsync(capturedColumnIndex, folder)">
+                                        <i class="bi bi-folder-fill" aria-hidden="true"></i>
+                                        <span class="text-truncate">@folder.Name</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" disabled="@OperationPending" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" type="button" disabled="@(OperationPending || _selectedCategoryKey is null)" @onclick="Confirm">Move here</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop fade show"></div>
+
+@code {
+    private sealed record CategoryOption(string Key, string DisplayName, string Icon);
+
+    private sealed class FolderColumn
+    {
+        public required string CategoryKey { get; init; }
+        public required string? FolderId { get; init; }
+        public List<ArchiveItemDto> Items { get; set; } = [];
+        public bool IsLoading { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private static readonly IReadOnlyList<CategoryOption> Categories =
+    [
+        new("videos", "Videos", "bi-collection-play"),
+        new("photos", "Photos", "bi-image"),
+        new("music", "Music", "bi-music-note-beamed"),
+        new("documents", "Documents", "bi-file-earmark-text"),
+        new("books", "Books", "bi-journal-bookmark-fill"),
+        new("downloads", "Downloads", "bi-download"),
+        new("shared", "Shared", "bi-people"),
+        new("family", "Family", "bi-house-heart"),
+    ];
+
+    [Parameter, EditorRequired] public ArchiveItemDto MovingItem { get; set; } = null!;
+    [Parameter, EditorRequired] public string SourceCategory { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<ArchiveBreadcrumbDto> SourceBreadcrumbs { get; set; } = [];
+    [Parameter] public bool OperationPending { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<(string DestinationCategory, string? DestinationFolderId)> OnConfirm { get; set; }
+
+    private string? _selectedCategoryKey;
+    private readonly List<FolderColumn> _folderColumns = [];
+    private string ModalLabelId => "archive-move-picker-label";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await SelectCategoryAsync(SourceCategory, preDrill: true);
+    }
+
+    private async Task SelectCategoryAsync(string categoryKey, bool preDrill = false)
+    {
+        if (!preDrill && categoryKey == _selectedCategoryKey)
+        {
+            return;
+        }
+
+        _selectedCategoryKey = categoryKey;
+        _folderColumns.Clear();
+        await AppendColumnAsync(categoryKey, folderId: null);
+
+        if (preDrill && string.Equals(categoryKey, SourceCategory, StringComparison.Ordinal))
+        {
+            foreach (var breadcrumb in SourceBreadcrumbs)
+            {
+                await AppendColumnAsync(categoryKey, breadcrumb.FolderId);
+            }
+        }
+    }
+
+    private async Task SelectFolderAsync(int columnIndex, ArchiveItemDto folder)
+    {
+        _folderColumns.RemoveRange(columnIndex + 1, _folderColumns.Count - columnIndex - 1);
+        await AppendColumnAsync(_folderColumns[columnIndex].CategoryKey, folder.Id);
+    }
+
+    private async Task AppendColumnAsync(string categoryKey, string? folderId)
+    {
+        var column = new FolderColumn { CategoryKey = categoryKey, FolderId = folderId, IsLoading = true };
+        _folderColumns.Add(column);
+        StateHasChanged();
+
+        try
+        {
+            var url = $"api/archive/{Uri.EscapeDataString(categoryKey)}/items";
+            if (!string.IsNullOrWhiteSpace(folderId))
+            {
+                url += $"?folderId={Uri.EscapeDataString(folderId)}";
+            }
+
+            var listing = await Http.GetFromJsonAsync<ArchiveListingDto>(url);
+            column.Items = (listing?.Items ?? [])
+                .Where(item => item.Kind == ArchiveItemKind.Folder && item.Id != MovingItem.Id)
+                .ToList();
+        }
+        catch (HttpRequestException)
+        {
+            column.Error = "This folder could not be loaded.";
+        }
+        finally
+        {
+            column.IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        if (OnCancel.HasDelegate)
+        {
+            await OnCancel.InvokeAsync();
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (_selectedCategoryKey is null || !OnConfirm.HasDelegate)
+        {
+            return;
+        }
+
+        var destinationFolderId = _folderColumns.Count > 0 ? _folderColumns[^1].FolderId : null;
+        await OnConfirm.InvokeAsync((_selectedCategoryKey, destinationFolderId));
+    }
+}
