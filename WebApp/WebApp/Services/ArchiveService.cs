@@ -25,6 +25,9 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
     private static readonly HashSet<string> PdfDocumentExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".pdf" };
 
+    private static readonly HashSet<string> SubtitleExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".srt" };
+
     private static readonly HashSet<string> CreatableFileExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
 
@@ -34,7 +37,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             .Concat(ImageExtensions)
             .Concat(BookExtensions)
             .Concat(TextDocumentExtensions)
-            .Concat(PdfDocumentExtensions),
+            .Concat(PdfDocumentExtensions)
+            .Concat(SubtitleExtensions),
         StringComparer.OrdinalIgnoreCase);
 
     private const string BooksCategoryKey = "books";

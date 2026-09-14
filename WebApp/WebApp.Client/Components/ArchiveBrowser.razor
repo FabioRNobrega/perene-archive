@@ -129,7 +129,7 @@
         <div class="list-group list-group-flush border-top" aria-label="Upload status">
             @foreach (var upload in _uploads)
             {
-                <div class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
+                <div @key="upload" class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
                     <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
                         <span class="text-truncate fw-semibold">@upload.FileName</span>
                         <span class="badge @UploadStatusBadgeClass(upload.Status) d-inline-flex align-items-center gap-1">

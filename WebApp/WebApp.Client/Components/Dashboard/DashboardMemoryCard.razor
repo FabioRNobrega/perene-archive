@@ -23,7 +23,7 @@
                     <span class="@ThresholdColor.TextClass(RamPercent)">@DashboardFormat.Bytes(_metrics.UsedBytes) of @DashboardFormat.Bytes(_metrics.TotalBytes)</span>
                 </div>
                 <div class="progress" role="progressbar" aria-label="RAM used"
-                     aria-valuenow="@(RamPercent ?? 0)" aria-valuemin="0" aria-valuemax="100" style="height: 6px;">
+                     aria-valuenow="@DashboardFormat.CssPercent(RamPercent)" aria-valuemin="0" aria-valuemax="100" style="height: 6px;">
                     <div class="progress-bar @ThresholdColor.ProgressBarClass(RamPercent)" style="width: @DashboardFormat.CssPercent(RamPercent)%;"></div>
                 </div>
             </div>

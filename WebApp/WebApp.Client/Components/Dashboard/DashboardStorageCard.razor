@@ -23,7 +23,7 @@
                     <span class="@ThresholdColor.TextClass(UsedPercent)">@DashboardFormat.Bytes(_metrics.UsedBytes) of @DashboardFormat.Bytes(_metrics.TotalBytes)</span>
                 </div>
                 <div class="progress" role="progressbar" aria-label="Storage used"
-                     aria-valuenow="@(UsedPercent ?? 0)" aria-valuemin="0" aria-valuemax="100" style="height: 6px;">
+                     aria-valuenow="@DashboardFormat.CssPercent(UsedPercent)" aria-valuemin="0" aria-valuemax="100" style="height: 6px;">
                     <div class="progress-bar @ThresholdColor.ProgressBarClass(UsedPercent)" style="width: @DashboardFormat.CssPercent(UsedPercent)%;"></div>
                 </div>
             </div>

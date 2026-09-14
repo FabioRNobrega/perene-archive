@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 using WebApp.Client.Models;
+using WebApp.Configuration;
 using WebApp.Models;
 using WebApp.Services;
 
@@ -171,11 +174,18 @@ internal static class ArchiveEndpoints
         long length,
         HttpRequest request,
         IArchiveUploadService uploads,
+        IOptions<ArchiveUploadOptions> uploadOptions,
         CancellationToken cancellationToken)
     {
         if (length <= 0)
         {
             return Results.BadRequest(new { error = "A positive chunk length is required." });
+        }
+
+        var maxBodySizeFeature = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxBodySizeFeature is { IsReadOnly: false })
+        {
+            maxBodySizeFeature.MaxRequestBodySize = uploadOptions.Value.ExtraLargeChunkSizeBytes;
         }
 
         try

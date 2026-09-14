@@ -126,6 +126,17 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void ValidateUploadDestination_accepts_srt_subtitle_files()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+
+        var destination = service.ValidateUploadDestination("documents", null, "movie.srt");
+
+        Assert.Equal(Path.Combine(root.Path, "Documents", "movie.srt"), destination.FinalPath);
+    }
+
+    [Fact]
     public void ValidateUploadDestination_throws_on_name_collision()
     {
         using var root = CreateArchive();
