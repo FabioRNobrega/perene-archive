@@ -78,7 +78,7 @@ public sealed class EpubBookServiceTests
     }
 
     [Fact]
-    public void TryGetBook_falls_back_to_word_count_for_first_content_chapter_when_navigation_is_missing()
+    public void TryGetBook_falls_back_to_word_count_for_first_content_chapter_when_navigation_has_no_entries()
     {
         using var directory = new TemporaryDirectory();
         var realChapterParagraph = string.Join(' ', Enumerable.Repeat("word", 40));
@@ -89,8 +89,7 @@ public sealed class EpubBookServiceTests
                 new EpubTestFixture.SpineEntry("titlepage.xhtml", "Title Page", "Test Book by Test Author"),
                 new EpubTestFixture.SpineEntry("chapter1.xhtml", "Chapter One", realChapterParagraph),
                 new EpubTestFixture.SpineEntry("chapter2.xhtml", "Chapter Two", realChapterParagraph)
-            ],
-            includeNavigation: false);
+            ]);
         var service = new EpubBookService(new EpubContentSanitizer());
         var item = CreateBookEntry(path);
 

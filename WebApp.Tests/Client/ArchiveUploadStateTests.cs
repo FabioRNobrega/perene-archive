@@ -124,4 +124,71 @@ public sealed class ArchiveUploadStateTests
 
         Assert.Equal(ArchiveUploadItemStatus.Pending, state.Status);
     }
+
+    [Fact]
+    public void PreviewState_counts_every_upload_status_in_a_mixed_batch()
+    {
+        var uploads = Enum.GetValues<ArchiveUploadItemStatus>()
+            .Select(status => new ArchiveUploadItemState { FileName = $"{status}.txt", TotalBytes = 1, Status = status })
+            .ToList();
+
+        var preview = ArchiveUploadPreviewState.From(uploads);
+
+        Assert.Equal(6, preview.Total);
+        Assert.Equal(1, preview.Done);
+        Assert.Equal(1, preview.Pending);
+        Assert.Equal(1, preview.Uploading);
+        Assert.Equal(1, preview.Completing);
+        Assert.Equal(1, preview.Interrupted);
+        Assert.Equal(1, preview.Error);
+        Assert.True(preview.CanDismissCompleted);
+    }
+
+    [Fact]
+    public void DismissCompleted_removes_only_done_items_and_their_file_references()
+    {
+        var done = new ArchiveUploadItemState { FileName = "done.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Done };
+        var pending = new ArchiveUploadItemState { FileName = "pending.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Pending };
+        var uploading = new ArchiveUploadItemState { FileName = "uploading.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Uploading };
+        var completing = new ArchiveUploadItemState { FileName = "completing.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Completing };
+        var interrupted = new ArchiveUploadItemState { FileName = "interrupted.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Interrupted };
+        var error = new ArchiveUploadItemState { FileName = "error.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Error };
+        var uploads = new List<ArchiveUploadItemState> { done, pending, uploading, completing, interrupted, error };
+        var fileReferences = uploads.ToDictionary(upload => upload, _ => new object());
+
+        ArchiveUploadPreviewState.DismissCompleted(uploads, fileReferences);
+
+        Assert.DoesNotContain(done, uploads);
+        Assert.DoesNotContain(done, fileReferences.Keys);
+        Assert.Equal(new[] { pending, uploading, completing, interrupted, error }, uploads);
+        Assert.All(uploads, upload => Assert.Contains(upload, fileReferences.Keys));
+    }
+
+    [Fact]
+    public void PreviewState_without_completed_uploads_does_not_offer_bulk_dismissal()
+    {
+        var preview = ArchiveUploadPreviewState.From([
+            new ArchiveUploadItemState { FileName = "pending.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Pending }
+        ]);
+
+        Assert.False(preview.CanDismissCompleted);
+        Assert.Equal(0, preview.Done);
+        Assert.Equal(0, preview.Uploading);
+        Assert.Equal(0, preview.Completing);
+        Assert.Equal(0, preview.Interrupted);
+        Assert.Equal(0, preview.Error);
+    }
+
+    [Fact]
+    public void Dismiss_removes_one_upload_and_its_file_reference()
+    {
+        var upload = new ArchiveUploadItemState { FileName = "done.txt", TotalBytes = 1, Status = ArchiveUploadItemStatus.Done };
+        var uploads = new List<ArchiveUploadItemState> { upload };
+        var fileReferences = new Dictionary<ArchiveUploadItemState, object> { [upload] = new() };
+
+        ArchiveUploadPreviewState.Dismiss(upload, uploads, fileReferences);
+
+        Assert.Empty(uploads);
+        Assert.Empty(fileReferences);
+    }
 }

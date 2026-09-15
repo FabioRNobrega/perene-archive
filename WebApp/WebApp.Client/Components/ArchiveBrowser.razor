@@ -135,10 +135,30 @@
 
     @if (_uploads.Count > 0)
     {
-        <div class="list-group list-group-flush border-top" aria-label="Upload status">
-            @foreach (var upload in _uploads)
-            {
-                <div @key="upload" class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
+        var uploadPreview = ArchiveUploadPreviewState.From(_uploads);
+        <section class="border-top" aria-label="Upload progress preview">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap px-3 py-2 bg-body-tertiary">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <strong>Uploaded @uploadPreview.Done of @uploadPreview.Total</strong>
+                    @if (uploadPreview.Pending > 0) { <span class="badge text-bg-secondary">@uploadPreview.Pending pending</span> }
+                    @if (uploadPreview.Uploading > 0) { <span class="badge text-bg-secondary">@uploadPreview.Uploading uploading</span> }
+                    @if (uploadPreview.Completing > 0) { <span class="badge text-bg-secondary">@uploadPreview.Completing completing</span> }
+                    @if (uploadPreview.Interrupted > 0) { <span class="badge text-bg-warning">@uploadPreview.Interrupted interrupted</span> }
+                    @if (uploadPreview.Error > 0) { <span class="badge text-bg-danger">@uploadPreview.Error error</span> }
+                </div>
+                @if (uploadPreview.CanDismissCompleted)
+                {
+                    <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" type="button"
+                            style="min-height: 40px;" @onclick="DismissCompletedUploads" aria-label="Dismiss completed uploads">
+                        <i class="bi bi-check2-all" aria-hidden="true"></i>
+                        Dismiss completed
+                    </button>
+                }
+            </div>
+            <div class="upload-progress-preview-list list-group list-group-flush">
+                @foreach (var upload in _uploads)
+                {
+                    <div @key="upload" class="list-group-item d-flex flex-column gap-2 py-3" aria-live="polite">
                     <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
                         <span class="text-truncate fw-semibold">@(upload.RelativePath ?? upload.FileName)</span>
                         <span class="badge @UploadStatusBadgeClass(upload.Status) d-inline-flex align-items-center gap-1">
@@ -200,15 +220,16 @@
                         else if (upload.Status == ArchiveUploadItemStatus.Done)
                         {
                             <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" type="button"
-                                    @onclick="() => _uploads.Remove(upload)">
+                                    @onclick="() => DismissUpload(upload)">
                                 <i class="bi bi-check2" aria-hidden="true"></i>
                                 Dismiss
                             </button>
                         }
                     </div>
-                </div>
-            }
-        </div>
+                    </div>
+                }
+            </div>
+        </section>
     }
 
     @if (_error is not null)
@@ -1363,10 +1384,15 @@
             }
         }
 
-        _uploads.Remove(state);
-        _uploadFileRefs.Remove(state);
+        DismissUpload(state);
         StateHasChanged();
     }
+
+    private void DismissCompletedUploads() =>
+        ArchiveUploadPreviewState.DismissCompleted(_uploads, _uploadFileRefs);
+
+    private void DismissUpload(ArchiveUploadItemState state) =>
+        ArchiveUploadPreviewState.Dismiss(state, _uploads, _uploadFileRefs);
 
     private static string UploadStatusBadgeClass(ArchiveUploadItemStatus status) => status switch
     {

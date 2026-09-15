@@ -2,6 +2,12 @@
     overflow: hidden;
 }
 
+.upload-progress-preview-list {
+    max-height: 30vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
 .archive-cover-overlay {
     top: 50%;
     color: var(--text-strong);
