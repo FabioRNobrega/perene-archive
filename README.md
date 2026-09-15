@@ -49,7 +49,7 @@ Table of contents
 
 2. Ensure Docker Compose or Podman Compose is available.
 
-3. Create the host archive layout. By default, the app uses `/home/PereneArchive`; alternatively, copy `.env.example` to `.env` and set `PERENE_ARCHIVE_ROOT` to an absolute path on the Docker host.
+3. Create the host archive layout. By default, the app uses `/home/PereneArchive`; alternatively, copy `.env.example` to `.env` and set `PERENE_ARCHIVE_ROOT` to an absolute path on the Docker host. The Dashboard Storage card measures this archive filesystem, so on a NAS set it to a directory actually mounted on the volume you want to monitor (for example, the filesystem reported by `df -h "$PERENE_ARCHIVE_ROOT"`).
 
    The archive root contains folders such as `Videos`, `Pictures`, `Music`, `Documents`, and `Books`. The video workflow also uses `Videos/Cuts` and `Videos/VideoComposition`.
 
