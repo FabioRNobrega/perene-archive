@@ -18,7 +18,7 @@ The application needs root runtime access to preserve direct Docker-dashboard te
 3. FR3 — The default Compose stack has no Docker socket proxy service, proxy URL configuration, socket-GID configuration, or proxy health dependency.
 4. FR4 — `DockerEngineApiClient` uses the direct Unix socket URI; the existing dashboard endpoint and browser-safe DTO contract remain unchanged.
 5. FR5 — `make archive-group` invokes a host-side script with elevated authority that creates the `perenearchive` group only when its name is unused, or verifies an existing same-named group. It never claims a fixed GID or changes an unrelated group.
-6. FR6 — `make archive-share USER=<account>` validates the named existing account and archive root, adds that account as a supplementary `perenearchive` group member, and recursively applies the archive group ownership plus group-write/setgid directory permissions to `PERENE_ARCHIVE_ROOT`, excluding root-only `.uploads`.
+6. FR6 — `make archive-share USER=<account> PERENE_ARCHIVE_ROOT=<path>` validates the named existing account and archive root, adds that account as a supplementary `perenearchive` group member, and recursively applies the archive group ownership, group-write/setgid directory permissions, and writable inherited POSIX ACL entries to `PERENE_ARCHIVE_ROOT`, excluding root-only `.uploads`.
 7. FR7 — Archive sharing never creates, renames, deletes, changes primary groups for, or grants Docker-socket access to any host account. It changes only the requested account's supplementary membership and archive-tree group ownership/modes.
 8. FR8 — The sharing command is idempotent, reports missing host tools or inaccessible archive roots clearly, and leaves unrelated `.env` settings untouched. It tells the operator that the target user must start a new login session for supplementary group membership to apply.
 9. FR9 — The optional HTTPS PFX continues to be read by root at `/https/perene.pfx`; no certificate ownership or ACL change is required for standard Docker runtime.
@@ -32,7 +32,7 @@ The application needs root runtime access to preserve direct Docker-dashboard te
 - Failure to access the direct socket leaves the rest of the dashboard operational and renders the existing Docker unavailable state.
 - The implementation supports the repository's Docker/Podman socket selection mechanism through `DASHBOARD_DOCKER_SOCKET`.
 - Archive group/mode changes are explicit, host-local, and scoped to `PERENE_ARCHIVE_ROOT` plus the requested existing account.
-- Shared archive directories use `2770` (`rwxrws---`) so new files inherit the `perenearchive` group; root-only `.uploads` remains `root:root` and is not shared. Sticky collaborative output directories may use `3770` (`rwxrws--T`) when deletion must be restricted to file owners.
+- Shared archive directories use `2770` (`rwxrws---`) and default POSIX ACL entries `default:group::rwx`/`default:mask::rwx`, so UI-created folders and files inherit writable `perenearchive` access; root-only `.uploads` remains `root:root` and is not shared. Sticky collaborative output directories may use `3770` (`rwxrws--T`) when deletion must be restricted to file owners.
 
 ## Out of Scope
 

@@ -30,7 +30,7 @@ help:
 		'make dotnet ARGS="build"       Run any dotnet command in Docker' \
 		'make test                      Run tests in an isolated stack' \
 		'make archive-group             Create or verify the host perenearchive group' \
-		'make archive-share USER=name   Grant an existing account archive-group access' \
+		'make archive-share USER=name [PERENE_ARCHIVE_ROOT=/path]  Grant an existing account archive-group access' \
 		'make get-url                   Show the URL to access the app from other LAN devices' \
 		'make https-cert                Generate the optional self-signed LAN HTTPS certificate'
 

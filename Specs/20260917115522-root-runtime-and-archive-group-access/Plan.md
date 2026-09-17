@@ -10,7 +10,7 @@ Keep the existing .NET/Blazor application root runtime and direct, read-only Doc
 
 `Dockerfile` installs packages and remains root; it does not create a `perenearchive` user. Compose does not set a non-root `user:` override. Root therefore retains normal access to Docker's read-only socket bind and the optional root-owned HTTPS PFX bind.
 
-Create `scripts/setup-archive-group.sh`, called by `make archive-group`, to safely create or verify the `perenearchive` host group using the host's available group allocation. Create `scripts/share-archive.sh`, called by `make archive-share USER=<account>`, to validate the existing target account and archive root, add it as a supplementary group member, recursively set the archive group to `perenearchive`, and apply `2770` to shared directories. It excludes root-only `.uploads`, applies `3770` to `Videos/Cuts` and `Videos/VideoComposition`, and reports that a new login is required. Re-running either command is idempotent.
+Create `scripts/setup-archive-group.sh`, called by `make archive-group`, to safely create or verify the `perenearchive` host group using the host's available group allocation. Create `scripts/share-archive.sh`, called by `make archive-share USER=<account> PERENE_ARCHIVE_ROOT=<path>`, to validate the existing target account and archive root, add it as a supplementary group member, recursively set the archive group to `perenearchive`, and apply `2770` plus writable access/default POSIX ACL entries to shared directories. This means `Directory.CreateDirectory` calls from the UI inherit editor access without application-specific per-folder permission logic. The script excludes root-only `.uploads`, applies `3770` to `Videos/Cuts` and `Videos/VideoComposition`, and reports that a new login is required. Re-running either command is idempotent.
 
 ### Direct dashboard transport
 
@@ -45,7 +45,7 @@ Restore direct-socket tests around `DockerEngineApiClient`/`DockerMetricsService
 ## Dependencies
 
 - Docker Compose/Podman Compose and its host socket, already required by this repository.
-- Linux host administration tools: `sudo`, `getent`, `groupadd`, `usermod`, `chgrp`, `chmod`, `find`, and `stat`.
+- Linux host administration tools: `sudo`, `getent`, `groupadd`, `usermod`, `chgrp`, `chmod`, `find`, `setfacl` (from the `acl` package), and `stat`.
 - Existing `Docker.DotNet` package, which continues to call the Docker Engine API through the Unix socket.
 
 ## External / Vendor Documentation Evidence
