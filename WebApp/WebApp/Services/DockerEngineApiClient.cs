@@ -5,7 +5,7 @@ namespace WebApp.Services;
 
 internal sealed class DockerEngineApiClient : IDockerApiClient, IDisposable
 {
-    private const string DockerSocketUri = "unix:///var/run/docker.sock";
+    internal const string DockerSocketUri = "unix:///var/run/docker.sock";
 
     private readonly Lazy<DockerClient> _client = new(() =>
         new DockerClientConfiguration(new Uri(DockerSocketUri)).CreateClient());
