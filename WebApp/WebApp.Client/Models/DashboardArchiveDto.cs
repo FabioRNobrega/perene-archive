@@ -16,4 +16,5 @@ public sealed record DashboardArchiveDto(
     int QueuedHoverPreviewJobs,
     int QueuedSubtitleJobs,
     int QueuedCutJobs,
-    int QueuedCompositionJobs);
+    int QueuedCompositionJobs,
+    int QueuedConversionJobs = 0);

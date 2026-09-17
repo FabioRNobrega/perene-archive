@@ -21,6 +21,7 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
         endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
         endpoints.MapPost("/api/archive/{category}/items/{id}/crop", CreateCropAsync);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion", CreateConversionAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/text", GetTextDocument);
         endpoints.MapPost("/api/archive/{category}/items/{id}/text/preview", PreviewTextDocument);
         endpoints.MapPut("/api/archive/{category}/items/{id}/text", SaveTextDocument);
@@ -46,6 +47,18 @@ internal static class ArchiveEndpoints
         endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash);
         endpoints.MapDelete("/api/archive/{category}/items", EmptyTrash);
         return endpoints;
+    }
+
+    private static async Task<IResult> CreateConversionAsync(string category, string id, IArchiveService archive, IVideoConversionProbe probe, MediaConversionPlanner planner, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
+        if (statuses.HasActiveSource(item.Id)) return Results.Conflict(new { error = "A conversion is already active for this file." });
+        var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
+        if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
+        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, planner.Plan(media, item.SizeBytes), media);
+        statuses.Seed(job);
+        if (!queue.TryEnqueue(job)) { statuses.Remove(job.JobId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+        return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.GetAll().Single(x => x.JobId == job.JobId)));
     }
 
     private static async Task<IResult> List(
@@ -1058,7 +1071,8 @@ internal static class ArchiveEndpoints
             IsTextDocument: item.IsTextDocument,
             IsPdfDocument: item.IsPdfDocument,
             PdfUrl: PdfUrl(item),
-            HasPlayableMedia: item.HasPlayableMedia);
+            HasPlayableMedia: item.HasPlayableMedia,
+            IsConvertibleVideo: item.IsConvertibleVideo);
     }
 
     private static (string? CoverUrl, string? Title, string? Author) ReadBookSummary(
@@ -1124,7 +1138,8 @@ internal static class ArchiveEndpoints
             IsMusic: item.IsMusic,
             AudioUrl: AudioUrl(item),
             AlbumCoverUrl: AlbumCoverUrl(item),
-            HasPlayableMedia: item.HasPlayableMedia);
+            HasPlayableMedia: item.HasPlayableMedia,
+            IsConvertibleVideo: item.IsConvertibleVideo);
     }
 
     private static async Task<ArchiveItemDto> ToDtoAsync(
@@ -1198,7 +1213,8 @@ internal static class ArchiveEndpoints
             item.IsMusic,
             AudioUrl(item),
             AlbumCoverUrl(item),
-            HasPlayableMedia: item.HasPlayableMedia);
+            HasPlayableMedia: item.HasPlayableMedia,
+            IsConvertibleVideo: item.IsConvertibleVideo);
     }
 
     private static string? AudioUrl(ArchiveItemEntry item) =>

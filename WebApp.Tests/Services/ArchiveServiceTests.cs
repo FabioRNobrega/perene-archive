@@ -388,6 +388,21 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void Transport_stream_files_are_convertible_but_not_playable()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Videos", "capture.ts"));
+        var service = CreateService(root.Path);
+
+        var item = Assert.Single(service.List("videos", null).Items);
+        var upload = service.ValidateUploadDestination("videos", null, "upload.ts");
+
+        Assert.True(item.IsConvertibleVideo);
+        Assert.False(item.IsVideo);
+        Assert.Equal(Path.Combine(root.Path, "Videos", "upload.ts"), upload.FinalPath);
+    }
+
+    [Fact]
     public void Folder_with_direct_video_reports_playable_media()
     {
         using var root = CreateArchive();

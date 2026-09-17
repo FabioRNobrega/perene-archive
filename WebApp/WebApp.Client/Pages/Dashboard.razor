@@ -2,7 +2,20 @@
 
 <PageTitle>Dashboard · PereneArchive</PageTitle>
 
-<div class="dashboard position-relative h-100 min-h-0">
+<section class="card dashboard-shell h-100 min-h-0 overflow-hidden">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs px-3 pt-2" role="tablist">
+            <li class="nav-item"><button class="nav-link @(_showJobs ? null : "active")" type="button" role="tab" aria-selected="@(!_showJobs)" @onclick="() => _showJobs = false">Overview</button></li>
+            <li class="nav-item"><button class="nav-link @(_showJobs ? "active" : null)" type="button" role="tab" aria-selected="@_showJobs" @onclick="ShowJobsAsync">Jobs</button></li>
+        </ul>
+    </div>
+    <div class="card-body position-relative h-100 min-h-0 @(_showJobs ? null : "dashboard")">
+    @if (_showJobs)
+    {
+        <DashboardConversionJobsTab @ref="_jobsTab" />
+    }
+    else
+    {
     <DashboardSystemCard @ref="_systemCard" />
     <DashboardMemoryCard @ref="_memoryCard" />
     <DashboardStorageCard @ref="_storageCard" />
@@ -12,6 +25,7 @@
     <DashboardHealthCard @ref="_healthCard" />
     <DashboardHistoryCard @ref="_historyCard" />
     <DashboardAlertsCard @ref="_alertsCard" />
+    }
     <button type="button"
             class="btn btn-secondary d-inline-flex align-items-center justify-content-center rounded-circle px-3 py-2 position-absolute bottom-0 end-0 z-2"
             title="Refresh"
@@ -19,9 +33,13 @@
             @onclick="RefreshAllAsync">
         <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
     </button>
-</div>
+    </div>
+</section>
 
 @code {
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
     private DashboardSystemCard? _systemCard;
     private DashboardMemoryCard? _memoryCard;
     private DashboardStorageCard? _storageCard;
@@ -31,6 +49,12 @@
     private DashboardHealthCard? _healthCard;
     private DashboardHistoryCard? _historyCard;
     private DashboardAlertsCard? _alertsCard;
+    private DashboardConversionJobsTab? _jobsTab;
+    private bool _showJobs;
+
+    protected override void OnParametersSet() => _showJobs = string.Equals(Tab, "jobs", StringComparison.OrdinalIgnoreCase);
+
+    private async Task ShowJobsAsync() { _showJobs = true; if (_jobsTab is not null) await _jobsTab.RefreshAsync(); }
 
     private async Task RefreshAllAsync()
     {
@@ -44,5 +68,6 @@
             _healthCard?.RefreshAsync() ?? Task.CompletedTask,
             _historyCard?.RefreshAsync() ?? Task.CompletedTask,
             _alertsCard?.RefreshAsync() ?? Task.CompletedTask);
+        if (_jobsTab is not null) await _jobsTab.RefreshAsync();
     }
 }

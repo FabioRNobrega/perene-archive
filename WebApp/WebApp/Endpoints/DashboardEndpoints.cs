@@ -16,6 +16,7 @@ internal static class DashboardEndpoints
         endpoints.MapGet("/api/dashboard/health", GetHealth);
         endpoints.MapGet("/api/dashboard/history", GetHistory);
         endpoints.MapGet("/api/dashboard/alerts", GetAlerts);
+        endpoints.MapGet("/api/dashboard/jobs", GetJobs);
         return endpoints;
     }
 
@@ -46,6 +47,9 @@ internal static class DashboardEndpoints
 
     private static IResult GetArchive(IArchiveMetricsService archiveMetricsService) =>
         Results.Ok(archiveMetricsService.GetArchiveMetrics());
+
+    private static IResult GetJobs(IVideoConversionJobStatusStore statuses) => Results.Ok(statuses.GetAll().Select(ToConversionDto));
+    internal static VideoConversionJobDto ToConversionDto(WebApp.Models.VideoConversionStatus status) => new(status.JobId, status.SourceName, status.Action.ToString(), status.State, status.SourceSizeBytes, status.OutputSizeBytes, status.OutputItemId, status.Diagnostic, status.QueuedAtUtc, status.StartedAtUtc, status.SourceDurationSeconds, status.ProcessedDurationSeconds, status.Speed);
 
     private static async Task<IResult> GetDockerAsync(IDockerMetricsService dockerMetricsService, CancellationToken cancellationToken) =>
         Results.Ok(await dockerMetricsService.GetDockerMetricsAsync(cancellationToken));

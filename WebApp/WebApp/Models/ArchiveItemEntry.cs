@@ -18,4 +18,5 @@ internal sealed record ArchiveItemEntry(
     bool IsTextDocument = false,
     bool IsPdfDocument = false,
     string? AlbumCoverId = null,
-    bool HasPlayableMedia = false);
+    bool HasPlayableMedia = false,
+    bool IsConvertibleVideo = false);

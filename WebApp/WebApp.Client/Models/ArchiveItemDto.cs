@@ -29,4 +29,5 @@ public sealed record ArchiveItemDto(
     bool IsTextDocument = false,
     bool IsPdfDocument = false,
     string? PdfUrl = null,
-    bool HasPlayableMedia = false);
+    bool HasPlayableMedia = false,
+    bool IsConvertibleVideo = false);

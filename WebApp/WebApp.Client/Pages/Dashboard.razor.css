@@ -4,6 +4,10 @@
     gap: .75rem;
 }
 
+.dashboard-shell {
+    --bs-card-spacer-y: .75rem;
+}
+
 @media (min-width: 1200px) {
     .dashboard {
         display: grid;

@@ -305,6 +305,10 @@
                                     </li>
                                     <li><hr class="dropdown-divider" /></li>
                                 }
+                                @if (item.IsConvertibleVideo && Category != "trash")
+                                {
+                                    <li><button class="dropdown-item d-flex align-items-center" type="button" disabled="@_operationPending" @onclick="() => ConvertAsync(item)" @onclick:stopPropagation="true"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button></li>
+                                }
                                 <li>
                                     <button class="dropdown-item d-flex align-items-center"
                                             type="button"
@@ -485,6 +489,34 @@
     <ImageCarouselViewer Images="_imageViewerImages" Category="@Category" StartId="_imageViewerStartId" OnExit="CloseImageViewer" />
 }
 
+@if (_conversionQueued)
+{
+    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@ConversionQueuedModalLabelId" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="@ConversionQueuedModalLabelId">Conversion queued</h1>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseConversionQueuedModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex gap-3">
+                        <i class="bi bi-arrow-repeat fs-3 text-primary" aria-hidden="true"></i>
+                        <p class="mb-0">Your conversion is working in the background. Open Jobs to follow its progress.</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseConversionQueuedModal">Stay here</button>
+                    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="/?tab=jobs">
+                        <i class="bi bi-speedometer2" aria-hidden="true"></i>
+                        View Jobs
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
 @if (_listing?.CanCreateFolder == true)
 {
     <div class="modal fade" id="@CreateModalId" tabindex="-1" aria-labelledby="@CreateModalLabelId" aria-hidden="true">
@@ -619,6 +651,7 @@
     private ArchiveItemDto? _renaming;
     private ArchiveItemDto? _moving;
     private bool _confirmingEmptyTrash;
+    private bool _conversionQueued;
     private string _renameName = string.Empty;
     private string? _error;
     private IJSObjectReference? _bootstrapModule;
@@ -643,6 +676,7 @@
     private string CreateFileInputId => $"archive-{Category}-create-file";
     private string RenameModalLabelId => $"archive-{Category}-rename-modal-label";
     private string EmptyTrashModalLabelId => $"archive-{Category}-empty-trash-modal-label";
+    private string ConversionQueuedModalLabelId => $"archive-{Category}-conversion-queued-modal-label";
     private string RenameInputId => $"archive-{Category}-rename";
     private string ArchiveStreamBasePath => $"api/archive/{Uri.EscapeDataString(Category)}/items";
 
@@ -831,6 +865,16 @@
             _error = "The video could not be reached.";
         }
     }
+
+    private async Task ConvertAsync(ArchiveItemDto item)
+    {
+        _operationPending = true; _error = null;
+        try { using var response = await Http.PostAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(item.Id)}/conversion", null); if (response.IsSuccessStatusCode) _conversionQueued = true; else _error = response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable ? "Conversion queue is full. Try again shortly." : "This file could not be queued for conversion."; }
+        catch (HttpRequestException) { _error = "The conversion request could not reach the server."; }
+        finally { _operationPending = false; }
+    }
+
+    private void CloseConversionQueuedModal() => _conversionQueued = false;
 
     private bool IsSelected(ArchiveItemDto item)
     {

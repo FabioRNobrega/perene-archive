@@ -1,0 +1,48 @@
+@inject HttpClient Http
+@using WebApp.Client.Models
+@implements IAsyncDisposable
+
+@if (_jobs.Count == 0)
+{
+    <div class="h-100 d-flex flex-column align-items-center justify-content-center text-center text-body-secondary py-5"><i class="bi bi-arrow-repeat display-6 mb-3" aria-hidden="true"></i><p class="mb-0">No conversion jobs have been submitted during this application session.</p></div>
+}
+else
+{
+    <section aria-label="Conversion jobs">
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap"><div><h1 class="h4 mb-1">Conversion jobs</h1><p class="text-body-secondary mb-0">@_jobs.Count job@(_jobs.Count == 1 ? string.Empty : "s") submitted in this application session.</p></div><button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" type="button" @onclick="RefreshAsync"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>Refresh jobs</button></div>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xxl-3 g-3">
+            @foreach (var job in _jobs)
+            {
+                var progress = ProgressPercent(job);
+                <div class="col" @key="job.JobId"><article class="card h-100 shadow-sm"><div class="card-body d-flex flex-column gap-3">
+                    <div class="d-flex align-items-start justify-content-between gap-3"><div class="flex-grow-1"><p class="text-body-secondary text-uppercase small fw-semibold mb-1">Source</p><h2 class="h6 text-break mb-0">@job.SourceName</h2></div><span class="badge @Badge(job.State) flex-shrink-0">@if (IsActive(job)) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }@job.State</span></div>
+                    @if (IsActive(job))
+                    {
+                        <div><div class="d-flex justify-content-between small mb-1"><span>@ProgressLabel(job)</span><strong>@progress.ToString("0")%</strong></div><div class="progress" role="progressbar" aria-label="Conversion progress for @job.SourceName" aria-valuenow="@progress" aria-valuemin="0" aria-valuemax="100" style="height: .65rem;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width: @($"{progress:0.#}%")"></div></div><div class="d-flex flex-wrap gap-3 small text-body-secondary mt-2"><span>Started @FormatStart(job.StartedAtUtc)</span><span>Elapsed @FormatElapsed(job.StartedAtUtc)</span>@if (Remaining(job) is { } remaining) { <span>About @FormatDuration(remaining) remaining</span> }</div></div>
+                    }
+                    <dl class="row mb-0 small"><dt class="col-5 text-body-secondary fw-normal">Action</dt><dd class="col-7 mb-2">@job.Action</dd><dt class="col-5 text-body-secondary fw-normal">Source size</dt><dd class="col-7 mb-2">@(job.SourceSizeBytes is null ? "Unknown" : FormatSize(job.SourceSizeBytes.Value))</dd>@if (!IsActive(job)) { <dt class="col-5 text-body-secondary fw-normal">Result</dt><dd class="col-7 mb-0 text-break">@Outcome(job)</dd> }</dl>
+                </div></article></div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private List<VideoConversionJobDto> _jobs = [];
+    private CancellationTokenSource? _pollingCts;
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    public async Task RefreshAsync() { try { _jobs = await Http.GetFromJsonAsync<List<VideoConversionJobDto>>("api/dashboard/jobs") ?? []; } catch (HttpRequestException) { _jobs = []; } UpdatePolling(); }
+    private void UpdatePolling() { if (_jobs.Any(IsActive)) { if (_pollingCts is null) { _pollingCts = new(); _ = PollAsync(_pollingCts.Token); } return; } _pollingCts?.Cancel(); _pollingCts = null; }
+    private async Task PollAsync(CancellationToken token) { try { using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2)); while (await timer.WaitForNextTickAsync(token)) { await RefreshAsync(); await InvokeAsync(StateHasChanged); if (!_jobs.Any(IsActive)) break; } } catch (OperationCanceledException) { } }
+    private static bool IsActive(VideoConversionJobDto job) => job.State is VideoConversionJobState.Pending or VideoConversionJobState.Processing or VideoConversionJobState.Finalizing;
+    private static double ProgressPercent(VideoConversionJobDto job) => job.State == VideoConversionJobState.Completed ? 100 : job.State == VideoConversionJobState.Finalizing ? 99 : job.SourceDurationSeconds is > 0 && job.ProcessedDurationSeconds is not null ? Math.Min(99, Math.Max(0, job.ProcessedDurationSeconds.Value / job.SourceDurationSeconds.Value * 100)) : 0;
+    private static TimeSpan? Remaining(VideoConversionJobDto job) => job.State == VideoConversionJobState.Processing && job.SourceDurationSeconds is > 0 && job.ProcessedDurationSeconds is not null && job.Speed is > 0 ? TimeSpan.FromSeconds(Math.Max(0, job.SourceDurationSeconds.Value - job.ProcessedDurationSeconds.Value) / job.Speed.Value) : null;
+    private static string ProgressLabel(VideoConversionJobDto job) => job.State == VideoConversionJobState.Pending ? "Queued" : job.State == VideoConversionJobState.Finalizing ? "Validating and publishing output" : job.ProcessedDurationSeconds is not null && job.SourceDurationSeconds is not null ? $"{FormatDuration(TimeSpan.FromSeconds(job.ProcessedDurationSeconds.Value))} of {FormatDuration(TimeSpan.FromSeconds(job.SourceDurationSeconds.Value))}" : "Preparing conversion";
+    private static string Badge(VideoConversionJobState s) => s switch { VideoConversionJobState.Completed => "text-bg-success", VideoConversionJobState.Failed => "text-bg-danger", VideoConversionJobState.Skipped => "text-bg-secondary", VideoConversionJobState.Finalizing => "text-bg-info", _ => "text-bg-primary" };
+    private static string FormatSize(long bytes) => $"{bytes / 1024d / 1024d:0.0} MB";
+    private static string FormatDuration(TimeSpan value) => value.TotalHours >= 1 ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}" : $"{value.Minutes}:{value.Seconds:00}";
+    private static string FormatStart(DateTimeOffset? value) => value is null ? "—" : value.Value.ToLocalTime().ToString("t");
+    private static string FormatElapsed(DateTimeOffset? value) => value is null ? "—" : FormatDuration(DateTimeOffset.UtcNow - value.Value);
+    private static string Outcome(VideoConversionJobDto job) => job.OutputSizeBytes is not null ? FormatSize(job.OutputSizeBytes.Value) : job.Diagnostic ?? "Waiting to start.";
+    public ValueTask DisposeAsync() { _pollingCts?.Cancel(); _pollingCts?.Dispose(); return ValueTask.CompletedTask; }
+}

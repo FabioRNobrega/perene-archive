@@ -55,6 +55,10 @@ builder.Services.AddOptions<VideoCompositionOptions>()
     .Validate(VideoCompositionOptions.HasPositiveQueueCapacity, "VideoComposition:QueueCapacity must be greater than zero.")
     .Validate(VideoCompositionOptions.HasPositiveTransitionDuration, "VideoComposition:TransitionDurationSeconds must be greater than zero.")
     .ValidateOnStart();
+builder.Services.AddOptions<VideoConversionOptions>()
+    .Bind(builder.Configuration.GetSection(VideoConversionOptions.SectionName))
+    .Validate(VideoConversionOptions.IsValid, "VideoConversion options are invalid.")
+    .ValidateOnStart();
 builder.Services.AddOptions<ArchiveUploadOptions>()
     .Bind(builder.Configuration.GetSection(ArchiveUploadOptions.SectionName))
     .Validate(ArchiveUploadOptions.HasPositiveTtl, "ArchiveUpload:SessionTtlHours must be greater than zero.")
@@ -123,6 +127,13 @@ builder.Services.AddSingleton<ICompositionJobStatusStore, CompositionJobStatusSt
 builder.Services.AddSingleton<IVideoCompositionProbe, FfprobeCompositionProbe>();
 builder.Services.AddSingleton<ICompositionGenerator, FfmpegCompositionGenerator>();
 builder.Services.AddHostedService<CompositionBackgroundWorker>();
+builder.Services.AddSingleton<IVideoConversionProbe, FfprobeVideoConversionProbe>();
+builder.Services.AddSingleton<MediaConversionPlanner>();
+builder.Services.AddSingleton<VideoConversionNamingService>();
+builder.Services.AddSingleton<IVideoConversionJobQueue, VideoConversionJobQueue>();
+builder.Services.AddSingleton<IVideoConversionJobStatusStore, VideoConversionJobStatusStore>();
+builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGenerator>();
+builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();

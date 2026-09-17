@@ -268,6 +268,16 @@ h1:focus { outline: none; }
     --bs-nav-pills-link-active-bg: #b98a2e;
 }
 
+/* Keep Bootstrap's tab states in the Perene gold family instead of the default link blue. */
+.nav-tabs {
+    --bs-nav-tabs-link-active-color: var(--brand-gold-onbg);
+    --bs-nav-tabs-link-active-bg: var(--bg-surface);
+    --bs-nav-tabs-link-active-border-color: var(--border) var(--border) var(--bg-surface);
+    --bs-nav-link-color: var(--brand-gold-onbg);
+    --bs-nav-link-hover-color: var(--text-strong);
+    --bs-nav-tabs-border-color: var(--border);
+}
+
 .card { --bs-card-bg: var(--bg-surface); --bs-card-color: var(--text-body); --bs-card-border-color: var(--border); box-shadow: var(--shadow); }
 .card-header { color: var(--text-body); background: var(--bg-elevated); border-bottom-color: var(--border); }
 .list-group {

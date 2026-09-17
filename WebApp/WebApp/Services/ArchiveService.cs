@@ -9,6 +9,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
 {
     private static readonly HashSet<string> VideoExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v" };
+    private static readonly HashSet<string> ConversionSourceExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv", ".rmvb", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".ts" };
 
     private static readonly HashSet<string> MusicExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".m4a" };
@@ -33,6 +35,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
 
     private static readonly HashSet<string> UploadableExtensions = new(
         VideoExtensions
+            .Concat(ConversionSourceExtensions)
             .Concat(MusicExtensions)
             .Concat(ImageExtensions)
             .Concat(BookExtensions)
@@ -274,6 +277,20 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
     }
 
+    public bool TryResolveConvertibleVideo(string categoryKey, string itemId, out ArchiveItemEntry? item)
+    {
+        item = null;
+        try
+        {
+            var category = ResolveCategory(categoryKey);
+            if (string.Equals(category.Key, "trash", StringComparison.OrdinalIgnoreCase)) return false;
+            var resolved = ResolveItem(category, itemId);
+            if (resolved.Kind != ArchiveItemKind.File || !resolved.IsConvertibleVideo) return false;
+            item = resolved; return true;
+        }
+        catch (Exception exception) when (exception is ArchiveException or IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException) { return false; }
+    }
+
     public bool TryResolveMusic(string categoryKey, string itemId, out ArchiveItemEntry? item)
     {
         item = null;
@@ -500,7 +517,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
                     IsBook(category, extension),
                     IsTextDocument(extension),
                     IsPdfDocument(extension),
-                    HasPlayableMedia: isDirectory && HasPlayableMediaRecursive(canonicalPath)));
+                    HasPlayableMedia: isDirectory && HasPlayableMediaRecursive(canonicalPath),
+                    IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension)));
             }
             catch (Exception exception) when (
                 exception is IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
@@ -623,7 +641,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             extension is not null && ImageExtensions.Contains(extension),
             IsBook(category, extension),
             IsTextDocument(extension),
-            IsPdfDocument(extension));
+            IsPdfDocument(extension),
+            IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension));
     }
 
     private static bool IsBook(ArchiveCategory category, string? extension) =>
