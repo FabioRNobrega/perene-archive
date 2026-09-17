@@ -13,7 +13,7 @@ DOCKER_HOST := $(shell \
 	fi)
 export DOCKER_HOST
 
-.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert
+.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert archive-group archive-share
 
 help:
 	@printf '%s\n' \
@@ -29,6 +29,8 @@ help:
 		'make docker-exec               Open the running web container shell' \
 		'make dotnet ARGS="build"       Run any dotnet command in Docker' \
 		'make test                      Run tests in an isolated stack' \
+		'make archive-group             Create or verify the host perenearchive group' \
+		'make archive-share USER=name   Grant an existing account archive-group access' \
 		'make get-url                   Show the URL to access the app from other LAN devices' \
 		'make https-cert                Generate the optional self-signed LAN HTTPS certificate'
 
@@ -86,6 +88,18 @@ docker-test-shell:
 https-cert:
 	@mkdir -p https
 	$(COMPOSE) -p $(COMPOSE_PROJECT) run --rm --no-deps --build webapp sh scripts/generate-https-cert.sh
+
+archive-group:
+	@sudo sh scripts/setup-archive-group.sh
+
+archive-share:
+	@if [ "$(origin USER)" != "command line" ] || [ -z "$(USER)" ]; then \
+		echo 'Usage: make archive-share USER=<existing-account>' >&2; \
+		exit 2; \
+	fi
+	@archive_root="$${PERENE_ARCHIVE_ROOT:-$$(sed -n 's/^PERENE_ARCHIVE_ROOT=//p' .env 2>/dev/null | head -n 1)}"; \
+	archive_root="$${archive_root:-/home/PereneArchive}"; \
+	sudo env PERENE_ARCHIVE_ROOT="$$archive_root" sh scripts/share-archive.sh "$(USER)"
 
 get-url:
 	@iface=$$(ip -o link show | awk -F': ' '{print $$2}' | grep -m1 '^wl'); \

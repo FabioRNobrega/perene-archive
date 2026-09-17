@@ -40,7 +40,7 @@ Table of contents
 | PDF documents | ✅ | Browse and open `.pdf` documents. |
 | Archive management | ✅ | Browse archive categories; create folders and `.txt`/`.md` text files; upload video/music/image/book/text/PDF/subtitle files via resumable, sequential chunked sessions with acknowledged progress, rate/ETA, Resume/Cancel recovery after an interruption or restart, and a bounded batch progress preview with aggregate status and completed-only bulk dismissal; rename, move (via a Finder-style column picker that can browse any move-eligible category and folder depth, including moving items across categories), and send supported files and folders to Trash; permanently empty Trash with a confirmation prompt. |
 | Appearance | ✅ | Dark and Kindle-paper light themes, responsive layout, and Fill-tab video mode. |
-| System dashboard | ✅ | The home page (`/`) shows System, Memory, Storage, Network, PereneArchive, Docker, Health, History, and Alerts cards with a manual Refresh control, backed by dedicated `/api/dashboard/*` endpoints. |
+| System dashboard | ✅ | The home page (`/`) shows System, Memory, Storage, Network, PereneArchive, Docker, Health, History, and Alerts cards with a manual Refresh control, backed by dedicated `/api/dashboard/*` endpoints. Docker telemetry uses a direct, read-only Engine socket mount. |
 | HTTPS / LAN request streaming | ✅ | Optional self-signed HTTPS + HTTP/2 Kestrel endpoint (`make https-cert`) so chunked archive uploads can stream instead of buffering; HTTP-only by default. |
 
 ## Install
@@ -53,7 +53,16 @@ Table of contents
 
    The archive root contains folders such as `Videos`, `Pictures`, `Music`, `Documents`, and `Books`. The video workflow also uses `Videos/Cuts` and `Videos/VideoComposition`.
 
-4. Build and start the application:
+4. Optional: grant an existing host administrator shared archive editing access. The webapp runs as root so it can read the direct, read-only Docker telemetry socket and an optional root-owned HTTPS PFX; this does not create a `perenearchive` user. To share archive folders with an existing account, create the host group and explicitly add that account:
+
+```bash
+make archive-group
+make archive-share USER=<existing-account>
+```
+
+The sharing command changes only the account's supplementary `perenearchive` membership and the archive tree's group/modes. Shared directories use setgid group-write permissions; `Videos/Cuts` and `Videos/VideoComposition` also use a sticky bit, while `.uploads` remains root-only. The account must start a new login session before the new group membership applies. Do not run this workflow on NAS systems without the standard Linux administration tools; the command will report missing tooling without guessing.
+
+5. Build and start the application:
 
 ```bash
 make docker-run
@@ -89,6 +98,8 @@ make docker-logs        # Follow web application logs
 make docker-ps          # List running containers
 make docker-down        # Stop the application
 make docker-reset       # Stop the application and remove its volumes
+make archive-group      # Create or verify the host perenearchive group
+make archive-share USER=<existing-account> # Share archive editing with an existing account
 ```
 
 The app is intended only for trusted local or private-LAN devices. Configure any additional allowed LAN hosts in the ignored `.env` file through `ALLOWED_NETWORK_HOSTS`.
@@ -124,6 +135,12 @@ Chromium's browser request streaming (used by chunked archive uploads) requires 
 4. On each client device, manually import `./https/perene.crt` into the OS or browser certificate trust store — this app cannot automate that step. Until a device trusts the certificate, it will see the browser's normal self-signed-certificate warning when redirected to HTTPS.
 
 Unsetting `HTTPS_CERT_PASSWORD` (or removing `./https/perene.pfx`) and restarting reverts the app to HTTP-only with no other changes required.
+
+## Docker telemetry and archive sharing
+
+The Dashboard reads Docker or Podman telemetry through the configured `DASHBOARD_DOCKER_SOCKET`, mounted read-only directly at `/var/run/docker.sock` in the root webapp container. The socket path and its credentials are never exposed to browser clients. If that socket is unavailable, only the Dashboard Docker card reports unavailable; the rest of the app continues to work.
+
+`make archive-group` creates the host-only `perenearchive` group with an available GID, or verifies the existing group without changing its GID. `make archive-share USER=<existing-account>` is opt-in and never creates, renames, deletes, changes the primary group of, or grants Docker-socket access to an account. It does not change `.env` settings.
 
 ## Docker Console
 
