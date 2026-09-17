@@ -60,7 +60,7 @@ make archive-group
 make archive-share USER=<existing-account>
 ```
 
-The sharing command changes only the account's supplementary `perenearchive` membership and the archive tree's group/modes. Shared directories use setgid group-write permissions; `Videos/Cuts` and `Videos/VideoComposition` also use a sticky bit, while `.uploads` remains root-only. The account must start a new login session before the new group membership applies. Do not run this workflow on NAS systems without the standard Linux administration tools; the command will report missing tooling without guessing.
+The sharing command changes only the account's supplementary `perenearchive` membership and the archive tree's group/modes. It also configures the inherited POSIX ACL policy, so folders and files later created by the UI remain writable by the `perenearchive` group. Shared directories use setgid group-write permissions; `Videos/Cuts` and `Videos/VideoComposition` also use a sticky bit, while `.uploads` remains root-only. The account must start a new login session before the new group membership applies. Do not run this workflow on NAS systems without the standard Linux administration tools (including `setfacl` from the `acl` package); the command will report missing tooling without guessing.
 
 5. Build and start the application:
 

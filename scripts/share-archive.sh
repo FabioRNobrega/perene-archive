@@ -15,7 +15,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-for command in getent usermod chgrp chmod find stat; do
+for command in getent usermod chgrp chmod find setfacl stat; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required host tool '$command' is unavailable. This NAS may require its own archive-sharing workflow." >&2
         exit 1
@@ -57,6 +57,11 @@ usermod -aG "$group_name" "$account"
 # Never traverse or change the root-only resumable-upload staging directory.
 find "$archive_root" -path "$uploads_path" -prune -o -exec chgrp "$group_name" {} +
 find "$archive_root" -path "$uploads_path" -prune -o -type d -exec chmod 2770 {} +
+# chmod cannot repair extended POSIX ACL entries. Set both the current group access and
+# the default inherited access on every shared directory, so UI-created folders and files
+# inherit write access for the perenearchive group without needing per-folder intervention.
+find "$archive_root" -path "$uploads_path" -prune -o -type d \
+    -exec setfacl -m g::rwx,m::rwx,d:g::rwx,d:m::rwx {} +
 find "$archive_root" -path "$uploads_path" -prune -o -type f -exec chmod g+rw,o-rwx {} +
 
 for sticky_directory in "$archive_root/Videos/Cuts" "$archive_root/Videos/VideoComposition"; do
