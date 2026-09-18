@@ -17,6 +17,9 @@ internal static class DashboardEndpoints
         endpoints.MapGet("/api/dashboard/history", GetHistory);
         endpoints.MapGet("/api/dashboard/alerts", GetAlerts);
         endpoints.MapGet("/api/dashboard/jobs", GetJobs);
+        endpoints.MapPost("/api/dashboard/jobs/{id}/pause", Pause);
+        endpoints.MapPost("/api/dashboard/jobs/{id}/resume", Resume);
+        endpoints.MapPost("/api/dashboard/jobs/{id}/stop", Stop);
         return endpoints;
     }
 
@@ -49,6 +52,15 @@ internal static class DashboardEndpoints
         Results.Ok(archiveMetricsService.GetArchiveMetrics());
 
     private static IResult GetJobs(IVideoConversionJobStatusStore statuses) => Results.Ok(statuses.GetAll().Select(ToConversionDto));
+    private static IResult Pause(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Pause, statuses.Pause);
+    private static IResult Resume(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Resume, statuses.Resume);
+    private static IResult Stop(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Stop, statuses.Stop);
+    private static IResult Control(string id, IVideoConversionJobStatusStore statuses, Func<string, bool> processAction, Func<string, bool> statusAction)
+    {
+        if (statuses.Get(id) is null) return Results.NotFound();
+        if (!processAction(id) || !statusAction(id)) return Results.Conflict(new { message = "This conversion job is no longer in a state that can be controlled." });
+        return Results.Ok(ToConversionDto(statuses.Get(id)!));
+    }
     internal static VideoConversionJobDto ToConversionDto(WebApp.Models.VideoConversionStatus status) => new(status.JobId, status.SourceName, status.Action.ToString(), status.State, status.SourceSizeBytes, status.OutputSizeBytes, status.OutputItemId, status.Diagnostic, status.QueuedAtUtc, status.StartedAtUtc, status.SourceDurationSeconds, status.ProcessedDurationSeconds, status.Speed);
 
     private static async Task<IResult> GetDockerAsync(IDockerMetricsService dockerMetricsService, CancellationToken cancellationToken) =>

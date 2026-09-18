@@ -132,6 +132,8 @@ builder.Services.AddSingleton<MediaConversionPlanner>();
 builder.Services.AddSingleton<VideoConversionNamingService>();
 builder.Services.AddSingleton<IVideoConversionJobQueue, VideoConversionJobQueue>();
 builder.Services.AddSingleton<IVideoConversionJobStatusStore, VideoConversionJobStatusStore>();
+builder.Services.AddSingleton<IVideoConversionProcessSignal, PosixVideoConversionProcessSignal>();
+builder.Services.AddSingleton<IVideoConversionProcessController, VideoConversionProcessController>();
 builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGenerator>();
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
