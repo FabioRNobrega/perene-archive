@@ -504,7 +504,6 @@
     private async Task HandleLoadedMetadataAsync()
     {
         _playbackError = false;
-        await ApplyPlayerPreferencesAsync();
 
         if (_pendingResumeTime > 0)
         {

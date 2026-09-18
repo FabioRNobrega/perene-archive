@@ -264,6 +264,64 @@ public sealed class VideoEndpointsTests
     }
 
     [Fact]
+    public async Task Get_by_id_returns_the_same_shape_as_the_collection_without_a_full_rescan()
+    {
+        using var root = new TemporaryDirectory();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "clip.mp4"), [1, 2, 3, 4]);
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var scanned = await ScanSingleAsync(client);
+
+        using var response = await client.GetAsync($"/api/videos/{scanned.Id}");
+        var json = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var video = await response.Content.ReadFromJsonAsync<VideoItemDto>();
+        Assert.Equal(scanned.Id, video!.Id);
+        Assert.Equal(scanned.Name, video.Name);
+        Assert.Equal(scanned.SizeBytes, video.SizeBytes);
+        Assert.DoesNotContain(root.Path, json);
+    }
+
+    [Fact]
+    public async Task Get_by_id_scans_on_a_cold_miss_and_resolves_a_newly_added_file()
+    {
+        using var root = new TemporaryDirectory();
+        var file = Path.Combine(root.Path, "clip.mp4");
+        await File.WriteAllBytesAsync(file, [1, 2, 3]);
+        string expectedId;
+        using (var scanningFactory = new VideoManagerFactory(root.Path))
+        using (var scanningClient = scanningFactory.CreateClient())
+        {
+            expectedId = (await ScanSingleAsync(scanningClient)).Id;
+        }
+
+        using var coldFactory = new VideoManagerFactory(root.Path);
+        using var coldClient = coldFactory.CreateClient();
+
+        Assert.Empty((await coldClient.GetFromJsonAsync<List<VideoItemDto>>("/api/videos"))!);
+
+        using var response = await coldClient.GetAsync($"/api/videos/{expectedId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var video = await response.Content.ReadFromJsonAsync<VideoItemDto>();
+        Assert.Equal(expectedId, video!.Id);
+    }
+
+    [Fact]
+    public async Task Get_by_id_returns_not_found_for_unresolvable_ids()
+    {
+        using var root = new TemporaryDirectory();
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync("/api/videos/not-an-id")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync($"/api/videos/{Guid.NewGuid():N}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Unknown_malformed_stale_deleted_and_path_like_ids_return_not_found()
     {
         using var root = new TemporaryDirectory();

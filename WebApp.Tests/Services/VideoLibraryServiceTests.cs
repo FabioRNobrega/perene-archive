@@ -183,6 +183,47 @@ public sealed class VideoLibraryServiceTests
         Assert.Equal(scanned, service.GetCurrentSnapshot());
     }
 
+    [Fact]
+    public async Task ResolveAsync_returns_snapshot_entry_without_rescanning()
+    {
+        using var root = new TemporaryDirectory();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "clip.mp4"), [1]);
+        var service = CreateService(root.Path);
+        var scanned = Assert.Single(await service.ScanAsync());
+
+        File.Delete(Path.Combine(root.Path, "clip.mp4"));
+        var resolved = await service.ResolveAsync(scanned.Id);
+
+        Assert.Equal(scanned, resolved);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_scans_once_when_id_is_not_yet_known()
+    {
+        using var root = new TemporaryDirectory();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "clip.mp4"), [1]);
+        var expectedId = Assert.Single(await CreateService(root.Path).ScanAsync()).Id;
+        var service = CreateService(root.Path);
+
+        Assert.Empty(service.GetCurrentSnapshot());
+        var resolved = await service.ResolveAsync(expectedId);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(expectedId, resolved!.Id);
+        Assert.NotEmpty(service.GetCurrentSnapshot());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_returns_null_for_unknown_id_after_single_scan_attempt()
+    {
+        using var root = new TemporaryDirectory();
+        var service = CreateService(root.Path);
+
+        var resolved = await service.ResolveAsync(Guid.NewGuid().ToString("N"));
+
+        Assert.Null(resolved);
+    }
+
     private static readonly string SharedPreviewPath = CreateSharedPreviewDirectory();
 
     private static string CreateSharedPreviewDirectory()

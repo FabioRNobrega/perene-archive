@@ -19,6 +19,7 @@ internal static class VideoEndpoints
     {
         endpoints.MapPost("/api/videos/scan", ScanAsync);
         endpoints.MapGet("/api/videos", GetCurrentSnapshot);
+        endpoints.MapGet("/api/videos/{id}", GetVideoById);
         endpoints.MapGet("/api/videos/{id}/stream", StreamAsync);
         endpoints.MapGet("/api/videos/{id}/thumbnail", GetThumbnail);
         endpoints.MapGet("/api/videos/{id}/preview", GetPreview);
@@ -71,6 +72,25 @@ internal static class VideoEndpoints
         var items = await Task.WhenAll(entries.Select(entry =>
             BuildDto(entry, thumbnailCoordinator, hoverPreviewCoordinator, subtitleCoordinator, metadataCoordinator, cancellationToken)));
         return Results.Ok(items);
+    }
+
+    private static async Task<IResult> GetVideoById(
+        string id,
+        IVideoLibraryService library,
+        ThumbnailCoordinator thumbnailCoordinator,
+        HoverPreviewCoordinator hoverPreviewCoordinator,
+        SubtitleCoordinator subtitleCoordinator,
+        VideoMetadataCoordinator metadataCoordinator,
+        CancellationToken cancellationToken)
+    {
+        var entry = await library.ResolveAsync(id, cancellationToken);
+        if (entry is null)
+        {
+            return Results.NotFound();
+        }
+
+        var item = await BuildDto(entry, thumbnailCoordinator, hoverPreviewCoordinator, subtitleCoordinator, metadataCoordinator, cancellationToken);
+        return Results.Ok(item);
     }
 
     private static IResult StreamAsync(string id, IVideoLibraryService library)

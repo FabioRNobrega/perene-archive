@@ -654,6 +654,7 @@
     private bool _conversionQueued;
     private string _renameName = string.Empty;
     private string? _error;
+    private string? _pendingVideoSelectionId;
     private IJSObjectReference? _bootstrapModule;
     private string? _previewingVideoId;
     private List<ArchiveItemDto> _imageViewerImages = [];
@@ -840,18 +841,24 @@
         }
 
         _error = null;
+        _pendingVideoSelectionId = item.Id;
 
         try
         {
-            using var response = await Http.PostAsync("api/videos/scan", content: null);
+            using var response = await Http.GetAsync($"api/videos/{Uri.EscapeDataString(item.Id)}");
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "The selected file is not available to the video player yet.";
+                return;
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 _error = "The video could not be prepared for playback.";
                 return;
             }
 
-            var videos = await response.Content.ReadFromJsonAsync<List<VideoItemDto>>() ?? [];
-            var video = videos.FirstOrDefault(video => video.Id == item.Id);
+            var video = await response.Content.ReadFromJsonAsync<VideoItemDto>();
             if (video is null)
             {
                 _error = "The selected file is not available to the video player yet.";
@@ -863,6 +870,13 @@
         catch (HttpRequestException)
         {
             _error = "The video could not be reached.";
+        }
+        finally
+        {
+            if (_pendingVideoSelectionId == item.Id)
+            {
+                _pendingVideoSelectionId = null;
+            }
         }
     }
 
@@ -878,6 +892,11 @@
 
     private bool IsSelected(ArchiveItemDto item)
     {
+        if (string.Equals(_pendingVideoSelectionId, item.Id, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         if (!(item.IsVideo || item.IsMusic) || !string.Equals(PlayerState.SelectedId, item.Id, StringComparison.Ordinal))
         {
             return false;

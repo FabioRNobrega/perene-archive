@@ -44,6 +44,18 @@ internal sealed class VideoLibraryService(
         return IsOpaqueId(id) && Volatile.Read(ref _snapshot).ById.TryGetValue(id, out entry);
     }
 
+    public async Task<VideoFileEntry?> ResolveAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (TryResolve(id, out var entry))
+        {
+            return entry;
+        }
+
+        await ScanAsync(cancellationToken);
+
+        return TryResolve(id, out entry) ? entry : null;
+    }
+
     internal static bool IsWithinRoot(string rootPath, string candidatePath)
     {
         var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));

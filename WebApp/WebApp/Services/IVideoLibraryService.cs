@@ -9,4 +9,6 @@ internal interface IVideoLibraryService
     IReadOnlyList<VideoFileEntry> GetCurrentSnapshot();
 
     bool TryResolve(string id, out VideoFileEntry? entry);
+
+    Task<VideoFileEntry?> ResolveAsync(string id, CancellationToken cancellationToken = default);
 }
