@@ -278,6 +278,19 @@ h1:focus { outline: none; }
     --bs-nav-tabs-border-color: var(--border);
 }
 
+/* Keep breadcrumb links/active crumb in the Perene gold family instead of the default link blue. */
+.breadcrumb {
+    --bs-breadcrumb-item-active-color: var(--brand-gold-onbg);
+}
+.breadcrumb .btn-link {
+    color: var(--brand-gold-onbg);
+}
+.breadcrumb .btn-link:hover,
+.breadcrumb .btn-link:focus {
+    color: var(--brand-gold-onbg);
+    text-decoration-color: var(--brand-gold-onbg);
+}
+
 .card { --bs-card-bg: var(--bg-surface); --bs-card-color: var(--text-body); --bs-card-border-color: var(--border); box-shadow: var(--shadow); }
 .card-header { color: var(--text-body); background: var(--bg-elevated); border-bottom-color: var(--border); }
 .list-group {
