@@ -307,7 +307,7 @@
                                 }
                                 @if (item.IsConvertibleVideo && Category != "trash")
                                 {
-                                    <li><button class="dropdown-item d-flex align-items-center" type="button" disabled="@_operationPending" @onclick="() => ConvertAsync(item)" @onclick:stopPropagation="true"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button></li>
+                                    <li><button class="dropdown-item d-flex align-items-center" type="button" disabled="@_operationPending" @onclick="() => OpenConversionPlanAsync(item)" @onclick:stopPropagation="true"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button></li>
                                 }
                                 <li>
                                     <button class="dropdown-item d-flex align-items-center"
@@ -517,6 +517,22 @@
     <div class="modal-backdrop fade show"></div>
 }
 
+@if (_conversionPlan is { } plan)
+{
+    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@ConversionPlanModalLabelId" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+            <div class="modal-header"><h1 class="modal-title fs-5" id="@ConversionPlanModalLabelId">Plan MP4 conversion</h1><button class="btn-close" type="button" aria-label="Close" disabled="@_operationPending" @onclick="CloseConversionPlan"></button></div>
+            <div class="modal-body d-flex flex-column gap-3">
+                <div class="table-responsive"><table class="table table-sm table-striped table-hover table-bordered align-middle mb-0"><thead><tr><th scope="col">Details</th><th scope="col">Input file</th><th scope="col">Output file</th></tr></thead><tbody><tr><th scope="row">Format</th><td>@plan.SourceFileType</td><td>MP4 · H.264/AAC</td></tr><tr><th scope="row">Video</th><td>@plan.VideoCodec · @plan.SourceWidth×@plan.SourceHeight</td><td>@plan.ProfileLabel · @plan.OutputWidth×@plan.OutputHeight</td></tr><tr><th scope="row">Audio</th><td>@(plan.AudioCodec ?? "None")</td><td>AAC-LC</td></tr><tr><th scope="row">Duration</th><td>@FormatDuration(plan.DurationSeconds)</td><td>@FormatDuration(plan.DurationSeconds)</td></tr><tr><th scope="row">Size</th><td>@FormatSize(plan.SourceSizeBytes)</td><td><strong>@FormatSize(plan.EstimatedSizeBytes)</strong></td></tr><tr><th scope="row">Estimated saving</th><td>—</td><td>@(plan.EstimatedSavingsBytes is null ? "Unknown" : FormatSize(plan.EstimatedSavingsBytes))</td></tr></tbody></table></div>
+                <p class="small text-body-secondary mb-0">Estimated size only; actual size can vary with media complexity. @plan.Limitation</p>
+                <div class="row g-3"><div class="col-md-4"><label class="form-label" for="@ConversionModeId">Mode</label><select class="form-select" id="@ConversionModeId" @bind="_conversionSelection.Mode" @bind:after="RecalculateConversionPlanAsync" disabled="@_operationPending">@foreach (var option in plan.Modes) { <option value="@option.Key">@option.Label</option> }</select></div><div class="col-md-4"><label class="form-label" for="@ConversionResolutionId">Resolution</label><select class="form-select" id="@ConversionResolutionId" @bind="_conversionSelection.OutputHeight" @bind:after="RecalculateConversionPlanAsync" disabled="@_operationPending">@foreach (var option in plan.Resolutions) { <option value="@option.Key">@option.Label@(option.Recommended ? " (recommended)" : "")</option> }</select></div><div class="col-md-4"><label class="form-label" for="@ConversionQualityId">Quality</label><select class="form-select" id="@ConversionQualityId" @bind="_conversionSelection.QualityPreset" @bind:after="RecalculateConversionPlanAsync" disabled="@_operationPending">@foreach (var option in plan.QualityPresets) { <option value="@option.Key">@option.Label</option> }</select></div></div>
+                @if (_conversionPlanError is not null) { <div class="alert alert-danger mb-0" role="alert">@_conversionPlanError</div> }
+            </div>
+            <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" disabled="@_operationPending" @onclick="CloseConversionPlan">Cancel</button><button class="btn btn-primary" type="button" disabled="@_operationPending" @onclick="StartConversionAsync"><i class="bi bi-play-fill me-1" aria-hidden="true"></i>Start conversion</button></div>
+        </div></div>
+    </div><div class="modal-backdrop fade show"></div>
+}
+
 @if (_listing?.CanCreateFolder == true)
 {
     <div class="modal fade" id="@CreateModalId" tabindex="-1" aria-labelledby="@CreateModalLabelId" aria-hidden="true">
@@ -652,6 +668,10 @@
     private ArchiveItemDto? _moving;
     private bool _confirmingEmptyTrash;
     private bool _conversionQueued;
+    private ArchiveItemDto? _conversionItem;
+    private VideoConversionPlanDto? _conversionPlan;
+    private VideoConversionSelectionDto _conversionSelection = new("compress");
+    private string? _conversionPlanError;
     private string _renameName = string.Empty;
     private string? _error;
     private string? _pendingVideoSelectionId;
@@ -678,6 +698,10 @@
     private string RenameModalLabelId => $"archive-{Category}-rename-modal-label";
     private string EmptyTrashModalLabelId => $"archive-{Category}-empty-trash-modal-label";
     private string ConversionQueuedModalLabelId => $"archive-{Category}-conversion-queued-modal-label";
+    private string ConversionPlanModalLabelId => $"archive-{Category}-conversion-plan-modal-label";
+    private string ConversionModeId => $"archive-{Category}-conversion-mode";
+    private string ConversionResolutionId => $"archive-{Category}-conversion-resolution";
+    private string ConversionQualityId => $"archive-{Category}-conversion-quality";
     private string RenameInputId => $"archive-{Category}-rename";
     private string ArchiveStreamBasePath => $"api/archive/{Uri.EscapeDataString(Category)}/items";
 
@@ -880,13 +904,33 @@
         }
     }
 
-    private async Task ConvertAsync(ArchiveItemDto item)
+    private async Task OpenConversionPlanAsync(ArchiveItemDto item)
     {
         _operationPending = true; _error = null;
-        try { using var response = await Http.PostAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(item.Id)}/conversion", null); if (response.IsSuccessStatusCode) _conversionQueued = true; else _error = response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable ? "Conversion queue is full. Try again shortly." : "This file could not be queued for conversion."; }
-        catch (HttpRequestException) { _error = "The conversion request could not reach the server."; }
+        try { using var response = await Http.PostAsJsonAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(item.Id)}/conversion/preview", new VideoConversionSelectionDto()); if (response.IsSuccessStatusCode) { _conversionPlan = await response.Content.ReadFromJsonAsync<VideoConversionPlanDto>(); _conversionItem = item; if (_conversionPlan is not null) _conversionSelection = _conversionPlan.Selection; } else _error = "This file could not be planned for conversion."; }
+        catch (HttpRequestException) { _error = "The conversion planner could not reach the server."; }
         finally { _operationPending = false; }
     }
+
+    private async Task RecalculateConversionPlanAsync()
+    {
+        if (_conversionItem is null) return;
+        _conversionPlanError = null; _operationPending = true;
+        try { _conversionSelection.TargetSizeBytes = null; using var response = await Http.PostAsJsonAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(_conversionItem.Id)}/conversion/preview", _conversionSelection); if (response.IsSuccessStatusCode) _conversionPlan = await response.Content.ReadFromJsonAsync<VideoConversionPlanDto>(); else _conversionPlanError = "That selection cannot be planned safely."; }
+        catch (HttpRequestException) { _conversionPlanError = "The estimate could not be recalculated."; }
+        finally { _operationPending = false; }
+    }
+
+    private async Task StartConversionAsync()
+    {
+        if (_conversionItem is null) return;
+        _operationPending = true; _conversionPlanError = null;
+        try { using var response = await Http.PostAsJsonAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(_conversionItem.Id)}/conversion", _conversionSelection); if (response.IsSuccessStatusCode) { CloseConversionPlan(); _conversionQueued = true; } else _conversionPlanError = response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable ? "Conversion queue is full. Try again shortly." : "This conversion could not be queued."; }
+        catch (HttpRequestException) { _conversionPlanError = "The conversion request could not reach the server."; }
+        finally { _operationPending = false; }
+    }
+    private void CloseConversionPlan() { _conversionPlan = null; _conversionItem = null; _conversionPlanError = null; }
+    private static string FormatDuration(double seconds) => TimeSpan.FromSeconds(seconds).TotalHours >= 1 ? TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss") : TimeSpan.FromSeconds(seconds).ToString(@"m\:ss");
 
     private void CloseConversionQueuedModal() => _conversionQueued = false;
 

@@ -21,6 +21,7 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
         endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
         endpoints.MapPost("/api/archive/{category}/items/{id}/crop", CreateCropAsync);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion/preview", PreviewConversionAsync);
         endpoints.MapPost("/api/archive/{category}/items/{id}/conversion", CreateConversionAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/text", GetTextDocument);
         endpoints.MapPost("/api/archive/{category}/items/{id}/text/preview", PreviewTextDocument);
@@ -49,17 +50,37 @@ internal static class ArchiveEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> CreateConversionAsync(string category, string id, IArchiveService archive, IVideoConversionProbe probe, MediaConversionPlanner planner, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
+    private static async Task<IResult> PreviewConversionAsync(string category, string id, VideoConversionSelectionDto? requestedSelection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IOptions<VideoConversionOptions> options, CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
+        var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
+        if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
+        var selection = requestedSelection is null ? catalog.DefaultFor(media) : new VideoConversionSelection(requestedSelection.Mode, requestedSelection.OutputHeight, requestedSelection.QualityPreset, requestedSelection.TargetSizeBytes);
+        return !resolver.TryResolve(media, item.SizeBytes, selection, out var profile, out var error)
+            ? Results.BadRequest(new { error })
+            : Results.Ok(ToPlanDto(item, media, profile!, catalog, options.Value));
+    }
+
+    private static async Task<IResult> CreateConversionAsync(string category, string id, VideoConversionSelectionDto selection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
     {
         if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
         if (statuses.HasActiveSource(item.Id)) return Results.Conflict(new { error = "A conversion is already active for this file." });
         var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
         if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
-        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, planner.Plan(media, item.SizeBytes), media);
+        var serverSelection = new VideoConversionSelection(selection.Mode, selection.OutputHeight, selection.QualityPreset, selection.TargetSizeBytes);
+        if (!resolver.TryResolve(media, item.SizeBytes, serverSelection, out var profile, out var error)) return Results.BadRequest(new { error });
+        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile);
         statuses.Seed(job);
         if (!queue.TryEnqueue(job)) { statuses.Remove(job.JobId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
         return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.GetAll().Single(x => x.JobId == job.JobId)));
     }
+
+    private static VideoConversionPlanDto ToPlanDto(ArchiveItemEntry item, VideoConversionProbeResult media, ResolvedVideoConversionProfile profile, ConversionProfileCatalog catalog, VideoConversionOptions options) => new(
+        item.Id, item.Name, Path.GetExtension(item.Name).TrimStart('.').ToUpperInvariant(), media.VideoCodec, media.AudioCodec, media.Width, media.Height, media.Duration.TotalSeconds, item.SizeBytes,
+        new(profile.Selection.Mode, profile.Selection.OutputHeight, profile.Selection.QualityPreset, profile.Selection.TargetSizeBytes), profile.Label, profile.OutputWidth, profile.OutputHeight, profile.VideoBitrate, profile.AudioBitrate, profile.EstimatedSizeBytes, profile.EstimatedSavingsBytes,
+        [new("compatible", "Make compatible / preserve quality"), new("compress", "Compress")],
+        catalog.HeightsFor(media).Select(height => new VideoConversionOptionDto(height.ToString(), height == media.Height ? "Original resolution" : $"{height}p", height == 720 && media.Height > 720)).ToList(),
+        [new("high", "Preserve quality"), new("balanced", "Balanced", true), new("compact", "Smaller file")], options.MinimumTargetSizeBytes, options.MaximumTargetSizeBytes);
 
     private static async Task<IResult> List(
         string category,

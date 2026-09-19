@@ -128,7 +128,10 @@ builder.Services.AddSingleton<IVideoCompositionProbe, FfprobeCompositionProbe>()
 builder.Services.AddSingleton<ICompositionGenerator, FfmpegCompositionGenerator>();
 builder.Services.AddHostedService<CompositionBackgroundWorker>();
 builder.Services.AddSingleton<IVideoConversionProbe, FfprobeVideoConversionProbe>();
-builder.Services.AddSingleton<MediaConversionPlanner>();
+builder.Services.AddSingleton<ConversionEstimateCalculator>();
+builder.Services.AddSingleton<ConversionProfileCatalog>();
+builder.Services.AddSingleton<ConversionProfileResolver>();
+builder.Services.AddSingleton<VideoConversionArgumentBuilder>();
 builder.Services.AddSingleton<VideoConversionNamingService>();
 builder.Services.AddSingleton<IVideoConversionJobQueue, VideoConversionJobQueue>();
 builder.Services.AddSingleton<IVideoConversionJobStatusStore, VideoConversionJobStatusStore>();

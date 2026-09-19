@@ -28,7 +28,7 @@ Table of contents
 | Area | Status | Supported capabilities and formats |
 | --- | :---: | --- |
 | Video library | ✅ | Browse and play `.mp4`, `.webm`, `.mov`, and `.m4v` videos. |
-| Video conversion | ✅ | Convert individual `.mp4`, `.webm`, `.mov`, `.m4v`, `.avi`, `.mkv`, `.rmvb`, `.flv`, `.wmv`, `.mpeg`, `.mpg`, `.3gp`, and `.ts` files into a non-destructive, collision-safe sibling MP4. Current-session jobs can pause/resume the active conversion or confirm stop; stopping cleans temporary output and leaves the original unchanged. Large, short compatible MP4s are optimized at high quality and published only when at least 15% smaller. |
+| Video conversion | ✅ | Plan each supported source before queueing a non-destructive, collision-safe sibling MP4: choose a compatible/compression profile, non-upscaling resolution, quality or target size, and review a server-calculated estimated output size. Current-session jobs can pause/resume or stop safely; embedded subtitle streams are not preserved in this release. |
 | Video editing | ✅ | Reframe vertical-video previews, set A/B points, and export stream-copied cuts. |
 | Video compositions | ✅ | Combine two or more cuts into a composed MP4 with fades. |
 | Video previews | ✅ | Static JPEG thumbnails and hover-preview MP4s are generated server-side. |
