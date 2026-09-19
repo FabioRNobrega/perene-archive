@@ -14,6 +14,7 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items", List);
         endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist);
         endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/download", DownloadAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/audio", StreamAudio);
         endpoints.MapGet("/api/archive/{category}/items/{id}/cover", GetAlbumCover);
         endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage);
@@ -407,6 +408,51 @@ internal static class ArchiveEndpoints
         {
             return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+    }
+
+    private static async Task<IResult> DownloadAsync(
+        string category,
+        string id,
+        HttpResponse response,
+        IArchiveService archive,
+        IArchiveDownloadService downloads,
+        CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveDownloadableItem(category, id, out var item) || item is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (item.Kind == ArchiveItemKind.File)
+        {
+            try
+            {
+                var stream = new FileStream(
+                    item.PhysicalPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 64 * 1024,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                return Results.File(
+                    stream,
+                    contentType: "application/octet-stream",
+                    fileDownloadName: item.Name,
+                    lastModified: item.LastWriteTimeUtc,
+                    enableRangeProcessing: true);
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        }
+
+        response.ContentType = "application/zip";
+        response.Headers.ContentDisposition = $"attachment; filename=\"{item.Name.Replace("\\", "\\\\").Replace("\"", "\\\"")}.zip\"";
+        await using var zipStream = response.BodyWriter.AsStream(leaveOpen: true);
+        await downloads.WriteFolderZipAsync(item, zipStream, cancellationToken);
+        return Results.Empty;
     }
 
     private static IResult StreamVideo(string category, string id, IArchiveService archive)

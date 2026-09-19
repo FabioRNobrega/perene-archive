@@ -277,6 +277,25 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
     }
 
+    public bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item)
+    {
+        item = null;
+        try
+        {
+            item = ResolveItem(ResolveCategory(categoryKey), itemId);
+            return true;
+        }
+        catch (ArchiveException)
+        {
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
     public bool TryResolveConvertibleVideo(string categoryKey, string itemId, out ArchiveItemEntry? item)
     {
         item = null;

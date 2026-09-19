@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.IO.Compression;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,68 @@ namespace WebApp.Tests.Endpoints;
 
 public sealed class ArchiveEndpointsTests
 {
+    [Fact]
+    public async Task Download_endpoint_returns_files_with_attachment_ranges_and_folders_as_streamed_zips()
+    {
+        using var root = CreateArchive();
+        var source = "download me"u8.ToArray();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "Downloads", "receipt.bin"), source);
+        Directory.CreateDirectory(Path.Combine(root.Path, "Downloads", "Reports", "Empty"));
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "Reports", "q1.txt"), "quarter one");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+        var file = listing.Items.Single(item => item.Name == "receipt.bin");
+        var folder = listing.Items.Single(item => item.Name == "Reports");
+
+        using var fileResponse = await client.GetAsync($"/api/archive/downloads/items/{file.Id}/download");
+        Assert.Equal(HttpStatusCode.OK, fileResponse.StatusCode);
+        Assert.Contains("attachment", fileResponse.Content.Headers.ContentDisposition!.Disposition);
+        Assert.Contains("receipt.bin", fileResponse.Content.Headers.ContentDisposition.ToString());
+        Assert.Equal(source, await fileResponse.Content.ReadAsByteArrayAsync());
+
+        using var rangeRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/archive/downloads/items/{file.Id}/download");
+        rangeRequest.Headers.Range = new RangeHeaderValue(0, 3);
+        using var rangeResponse = await client.SendAsync(rangeRequest);
+        Assert.Equal(HttpStatusCode.PartialContent, rangeResponse.StatusCode);
+        Assert.Equal(source[..4], await rangeResponse.Content.ReadAsByteArrayAsync());
+
+        using var folderResponse = await client.GetAsync($"/api/archive/downloads/items/{folder.Id}/download");
+        Assert.Equal(HttpStatusCode.OK, folderResponse.StatusCode);
+        Assert.Equal("application/zip", folderResponse.Content.Headers.ContentType!.MediaType);
+        Assert.Contains("Reports.zip", folderResponse.Content.Headers.ContentDisposition!.ToString());
+        await using var zipBytes = new MemoryStream(await folderResponse.Content.ReadAsByteArrayAsync());
+        using var zip = new ZipArchive(zipBytes, ZipArchiveMode.Read);
+        Assert.Equal(["Reports/", "Reports/Empty/", "Reports/q1.txt"], zip.Entries.Select(entry => entry.FullName).Order());
+        Assert.DoesNotContain(root.Path, await folderResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Download_endpoint_supports_trash_and_rejects_invalid_or_cross_category_ids_without_path_disclosure()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Trash", "removed.txt"), "gone");
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "other.txt"), "other");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var trash = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/trash/items"))!;
+        var downloads = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/archive/trash/items/{trash.Items.Single().Id}/download")).StatusCode);
+        foreach (var url in new[]
+        {
+            "/api/archive/downloads/items/unknown/download",
+            "/api/archive/downloads/items/%2Fetc%2Fpasswd/download",
+            $"/api/archive/documents/items/{downloads.Items.Single().Id}/download"
+        })
+        {
+            using var response = await client.GetAsync(url);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.DoesNotContain(root.Path, body);
+        }
+    }
+
     [Fact]
     public async Task Listing_returns_browser_safe_category_items()
     {
@@ -1078,6 +1141,8 @@ public sealed class ArchiveEndpointsTests
         Assert.Contains("FormatDuration(item.DurationSeconds)", archiveBrowser);
         Assert.Contains("FormatResolution(item.Width, item.Height)", archiveBrowser);
         Assert.Contains("FormatDimensions(item.Width, item.Height)", archiveBrowser);
+        Assert.Contains("bi-download", archiveBrowser);
+        Assert.Contains("/download", archiveBrowser);
         Assert.DoesNotContain("card-footer d-flex gap-2 justify-content-center", archiveBrowser);
         Assert.Contains("<VideoGrid Items=\"_cuts\"", home);
         Assert.Contains("<VideoGrid Items=\"_compositions\"", home);

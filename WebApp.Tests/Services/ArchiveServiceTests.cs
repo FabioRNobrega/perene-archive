@@ -603,6 +603,23 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void TryResolveDownloadableItem_resolves_files_and_folders_only_in_their_category()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Downloads", "receipt.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Downloads", "Reports"));
+        var service = CreateService(root.Path);
+        var items = service.List("downloads", null).Items;
+
+        Assert.True(service.TryResolveDownloadableItem("downloads", items.Single(item => item.Name == "receipt.txt").Id, out var file));
+        Assert.Equal(ArchiveItemKind.File, file!.Kind);
+        Assert.True(service.TryResolveDownloadableItem("downloads", items.Single(item => item.Name == "Reports").Id, out var folder));
+        Assert.Equal(ArchiveItemKind.Folder, folder!.Kind);
+        Assert.False(service.TryResolveDownloadableItem("documents", file.Id, out _));
+        Assert.False(service.TryResolveDownloadableItem("downloads", "unknown", out _));
+    }
+
+    [Fact]
     public void Album_cover_resolver_works_for_any_category_folder()
     {
         using var root = CreateArchive();

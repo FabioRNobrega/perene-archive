@@ -141,6 +141,7 @@ builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGe
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
+builder.Services.AddSingleton<IArchiveDownloadService, ArchiveDownloadService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
 builder.Services.AddHostedService<ArchiveUploadCleanupWorker>();
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
