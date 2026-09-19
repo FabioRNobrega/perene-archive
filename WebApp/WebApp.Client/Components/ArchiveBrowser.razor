@@ -1,4 +1,5 @@
 @using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.Extensions.Logging
 @inject HttpClient Http
 @inject IJSRuntime JS
@@ -273,78 +274,79 @@
                 <div class="col">
                     <div class="card h-100 position-relative overflow-hidden @(selected ? "border-primary border-2" : null)"
                          @onmouseenter="() => StartPreview(item)"
-                         @onmouseleave="ClearPreview">
+                         @onmouseleave="ClearPreview"
+                         @onkeydown="HandleCardKeyDown">
                         @if (selected)
                         {
                             <span class="badge text-bg-primary position-absolute top-0 start-0 z-1 m-2">
                                 <i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>Selected
                             </span>
                         }
-                        <div class="dropdown position-absolute top-0 end-0 z-2 m-2" @onclick:stopPropagation="true">
-                            <button class="btn btn-outline-secondary btn-sm rounded-circle d-inline-flex align-items-center justify-content-center bg-body bg-opacity-75"
-                                    style="width:40px;height:40px;"
-                                    type="button"
-                                    disabled="@_operationPending"
-                                    data-bs-toggle="dropdown"
-                                    aria-expanded="false"
-                                    aria-label="Actions for @item.Name">
-                                <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end">
+                        @if (_openActionsItemId != item.Id)
+                        {
+                            <div class="position-absolute top-0 end-0 z-3 me-2" @onclick:stopPropagation="true">
+                                <button class="btn btn-primary btn-sm rounded-top-0 rounded-bottom-2 d-inline-flex align-items-center justify-content-center"
+                                        style="width:40px;height:40px;"
+                                        type="button"
+                                        disabled="@_operationPending"
+                                        aria-expanded="false"
+                                        aria-label="Actions for @item.Name"
+                                        @onclick="() => ToggleActions(item.Id)">
+                                    <i class="bi bi-arrow-bar-down" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        }
+                        <section class="archive-actions-panel position-absolute top-0 start-0 end-0 bottom-0 d-flex flex-column @(_openActionsItemId == item.Id ? "is-open" : null)"
+                                 aria-label="Actions for @item.Name"
+                                 aria-hidden="@(_openActionsItemId != item.Id)"
+                                 inert="@(_openActionsItemId != item.Id)"
+                                 @onclick:stopPropagation="true">
+                            <div class="d-flex justify-content-end me-2"><button class="btn btn-primary btn-sm rounded-top-0 rounded-bottom-2 d-inline-flex align-items-center justify-content-center" style="width:40px;height:40px;" type="button" aria-label="Hide actions for @item.Name" @onclick="CloseActions"><i class="bi bi-arrow-bar-up" aria-hidden="true"></i></button></div>
+                            <div class="list-group list-group-flush d-flex flex-column flex-grow-1">
                                 @if (item.Kind == ArchiveItemKind.Folder && item.HasPlayableMedia)
                                 {
-                                    <li>
-                                        <button class="dropdown-item d-flex align-items-center"
+                                    <button class="list-group-item list-group-item-action d-flex align-items-center"
                                                 type="button"
                                                 disabled="@_operationPending"
-                                                @onclick="() => PlayAsPlaylist(item)"
+                                                @onclick="() => PlayAsPlaylistFromActions(item)"
                                                 @onclick:stopPropagation="true">
                                             <i class="bi bi-collection-play me-2" aria-hidden="true"></i>
                                             Play as a Playlist
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
+                                    </button>
                                 }
                                 @if (item.IsConvertibleVideo && Category != "trash")
                                 {
-                                    <li><button class="dropdown-item d-flex align-items-center" type="button" disabled="@_operationPending" @onclick="() => OpenConversionPlanAsync(item)" @onclick:stopPropagation="true"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button></li>
+                                    <button class="list-group-item list-group-item-action d-flex align-items-center" type="button" disabled="@_operationPending" @onclick="() => OpenConversionPlanFromActionsAsync(item)" @onclick:stopPropagation="true"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button>
                                 }
-                                <li>
-                                    <button class="dropdown-item d-flex align-items-center"
+                                <button class="list-group-item list-group-item-action d-flex align-items-center"
                                             type="button"
                                             disabled="@_operationPending"
-                                            @onclick="() => StartRename(item)"
+                                            @onclick="() => StartRenameFromActions(item)"
                                             @onclick:stopPropagation="true">
                                         <i class="bi bi-pencil me-2" aria-hidden="true"></i>
                                         Rename
-                                    </button>
-                                </li>
-                                <li>
-                                    <button class="dropdown-item d-flex align-items-center"
+                                </button>
+                                <button class="list-group-item list-group-item-action d-flex align-items-center"
                                             type="button"
                                             disabled="@_operationPending"
-                                            @onclick="() => StartMove(item)"
+                                            @onclick="() => StartMoveFromActions(item)"
                                             @onclick:stopPropagation="true">
                                         <i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>
                                         Move
-                                    </button>
-                                </li>
+                                </button>
                                 @if (Category != "trash")
                                 {
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <button class="dropdown-item text-danger d-flex align-items-center"
+                                        <button class="list-group-item list-group-item-action text-danger d-flex align-items-center mt-auto"
                                                 type="button"
                                                 disabled="@_operationPending"
-                                                @onclick="() => DeleteAsync(item)"
+                                                @onclick="() => DeleteFromActionsAsync(item)"
                                                 @onclick:stopPropagation="true">
                                             <i class="bi bi-trash3 me-2" aria-hidden="true"></i>
                                             Move to Trash
                                         </button>
-                                    </li>
                                 }
-                            </ul>
-                        </div>
+                            </div>
+                        </section>
                         <button class="@CardButtonCssClass(item)"
                                 type="button"
                                 aria-pressed="@((item.IsVideo || item.IsMusic) ? selected : null)"
@@ -675,6 +677,7 @@
     private string _renameName = string.Empty;
     private string? _error;
     private string? _pendingVideoSelectionId;
+    private string? _openActionsItemId;
     private IJSObjectReference? _bootstrapModule;
     private string? _previewingVideoId;
     private List<ArchiveItemDto> _imageViewerImages = [];
@@ -911,6 +914,21 @@
         catch (HttpRequestException) { _error = "The conversion planner could not reach the server."; }
         finally { _operationPending = false; }
     }
+
+    private void ToggleActions(string itemId) => _openActionsItemId = _openActionsItemId == itemId ? null : itemId;
+    private void CloseActions() => _openActionsItemId = null;
+    private void HandleCardKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            CloseActions();
+        }
+    }
+    private void PlayAsPlaylistFromActions(ArchiveItemDto item) { CloseActions(); PlayAsPlaylist(item); }
+    private async Task OpenConversionPlanFromActionsAsync(ArchiveItemDto item) { CloseActions(); await OpenConversionPlanAsync(item); }
+    private void StartRenameFromActions(ArchiveItemDto item) { CloseActions(); StartRename(item); }
+    private void StartMoveFromActions(ArchiveItemDto item) { CloseActions(); StartMove(item); }
+    private async Task DeleteFromActionsAsync(ArchiveItemDto item) { CloseActions(); await DeleteAsync(item); }
 
     private async Task RecalculateConversionPlanAsync()
     {
