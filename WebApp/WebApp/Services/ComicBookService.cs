@@ -75,7 +75,7 @@ internal sealed class ComicBookService(IOptions<ComicReaderOptions> options, ILo
                 }
                 if (Types.ContainsKey(Path.GetExtension(entry.Name))) pages.Add(entry.FullName);
             }
-            pages.Sort(StringComparer.Ordinal);
+            pages.Sort(ComparePageNames);
             return true;
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
@@ -83,6 +83,43 @@ internal sealed class ComicBookService(IOptions<ComicReaderOptions> options, ILo
             logger.LogWarning(exception, "Comic archive could not be opened for opaque archive item {ItemId}", item.Id);
             return false;
         }
+    }
+
+    // CBZ page names are commonly numeric. Ordinal sorting would put 10.webp before 2.webp,
+    // while this comparison keeps numeric runs in their expected reading order.
+    private static int ComparePageNames(string left, string right)
+    {
+        var leftIndex = 0;
+        var rightIndex = 0;
+        while (leftIndex < left.Length && rightIndex < right.Length)
+        {
+            var leftChar = left[leftIndex];
+            var rightChar = right[rightIndex];
+            if (char.IsAsciiDigit(leftChar) && char.IsAsciiDigit(rightChar))
+            {
+                var leftStart = leftIndex;
+                var rightStart = rightIndex;
+                while (leftIndex < left.Length && left[leftIndex] == '0') leftIndex++;
+                while (rightIndex < right.Length && right[rightIndex] == '0') rightIndex++;
+                var leftDigitsStart = leftIndex;
+                var rightDigitsStart = rightIndex;
+                while (leftIndex < left.Length && char.IsAsciiDigit(left[leftIndex])) leftIndex++;
+                while (rightIndex < right.Length && char.IsAsciiDigit(right[rightIndex])) rightIndex++;
+                var lengthComparison = (leftIndex - leftDigitsStart).CompareTo(rightIndex - rightDigitsStart);
+                if (lengthComparison != 0) return lengthComparison;
+                var digitComparison = string.CompareOrdinal(left, leftDigitsStart, right, rightDigitsStart, leftIndex - leftDigitsStart);
+                if (digitComparison != 0) return digitComparison;
+                var zeroComparison = (leftIndex - leftStart).CompareTo(rightIndex - rightStart);
+                if (zeroComparison != 0) return zeroComparison;
+                continue;
+            }
+
+            if (leftChar != rightChar) return leftChar.CompareTo(rightChar);
+            leftIndex++;
+            rightIndex++;
+        }
+
+        return left.Length.CompareTo(right.Length);
     }
 
 }
