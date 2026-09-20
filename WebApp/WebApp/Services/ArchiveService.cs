@@ -20,6 +20,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
 
     private static readonly HashSet<string> BookExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".epub" };
+    private static readonly HashSet<string> ComicExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".cbz" };
 
     private static readonly HashSet<string> TextDocumentExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".md", ".markdown", ".txt" };
@@ -39,6 +41,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             .Concat(MusicExtensions)
             .Concat(ImageExtensions)
             .Concat(BookExtensions)
+            .Concat(ComicExtensions)
             .Concat(TextDocumentExtensions)
             .Concat(PdfDocumentExtensions)
             .Concat(SubtitleExtensions),
@@ -388,6 +391,22 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
     }
 
+    public bool TryResolveComic(string categoryKey, string itemId, out ArchiveItemEntry? item)
+    {
+        item = null;
+        try
+        {
+            var resolved = ResolveItem(ResolveCategory(categoryKey), itemId);
+            if (resolved.Kind != ArchiveItemKind.File || !resolved.IsComic) return false;
+            item = resolved;
+            return true;
+        }
+        catch (Exception exception) when (exception is ArchiveException or IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
     public bool TryResolveTextDocument(string categoryKey, string itemId, out ArchiveItemEntry? item)
     {
         item = null;
@@ -661,6 +680,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             IsBook(category, extension),
             IsTextDocument(extension),
             IsPdfDocument(extension),
+            extension is not null && ComicExtensions.Contains(extension),
             IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension));
     }
 

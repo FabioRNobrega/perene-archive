@@ -67,6 +67,10 @@ builder.Services.AddOptions<ArchiveUploadOptions>()
     .Validate(ArchiveUploadOptions.HasPositiveChunkSizes, "ArchiveUpload chunk sizes must be positive and strictly increasing.")
     .Validate(ArchiveUploadOptions.HasIncreasingThresholds, "ArchiveUpload thresholds must be positive, strictly increasing, and within the maximum size.")
     .ValidateOnStart();
+builder.Services.AddOptions<ComicReaderOptions>()
+    .Bind(builder.Configuration.GetSection(ComicReaderOptions.SectionName))
+    .Validate(ComicReaderOptions.IsValid, "ComicReader limits must be positive and the aggregate limit must be at least one page.")
+    .ValidateOnStart();
 builder.Services.AddOptions<HoverPreviewOptions>()
     .Bind(builder.Configuration.GetSection(HoverPreviewOptions.SectionName))
     .Validate(HoverPreviewOptions.HasPositiveWidth, "HoverPreview:Width must be greater than zero.")
@@ -141,6 +145,7 @@ builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGe
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
+builder.Services.AddSingleton<IComicBookService, ComicBookService>();
 builder.Services.AddSingleton<IArchiveDownloadService, ArchiveDownloadService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
 builder.Services.AddHostedService<ArchiveUploadCleanupWorker>();

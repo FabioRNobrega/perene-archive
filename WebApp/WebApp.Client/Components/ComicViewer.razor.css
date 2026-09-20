@@ -1,0 +1,7 @@
+.comic-viewer { z-index: 5; }
+.comic-toolbar { background: rgba(8,10,9,.92); min-height: 56px; }
+.comic-page { overflow: hidden; touch-action: pan-y; }
+.comic-page img { object-fit: contain; max-width: 100%; max-height: 100%; }
+.comic-page img.fit-height { height: 100%; width: auto; }
+.comic-page img.fit-width { width: 100%; height: auto; }
+.comic-tap-zone { position: absolute; top: 0; bottom: 0; width: 25%; border: 0; background: transparent; z-index: 1; }

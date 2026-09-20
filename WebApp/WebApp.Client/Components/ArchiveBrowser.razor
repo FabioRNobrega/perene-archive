@@ -426,6 +426,13 @@
                                     </span>
                                 </span>
                             }
+                            else if (IsComic(item))
+                            {
+                                <span class="archive-cover-tile book-cover-tile ratio w-100 bg-body-tertiary" style="--bs-aspect-ratio: 150%;" aria-hidden="true">
+                                    <span class="d-flex align-items-center justify-content-center h-100"><i class="bi bi-journal-richtext display-1 lh-1 text-primary" aria-hidden="true"></i></span>
+                                    <span class="archive-cover-overlay position-absolute start-0 end-0 bottom-0 d-flex flex-column gap-1 text-start p-3"><span class="fw-semibold text-truncate">@FormatDisplayName(item)</span><span class="small">CBZ comic</span></span>
+                                </span>
+                            }
                             else if (item.IsVideo)
                             {
                                 <span class="ratio ratio-16x9 bg-body-tertiary border-bottom w-100" aria-hidden="true">
@@ -460,7 +467,7 @@
                                     </span>
                                 </span>
                             }
-                            @if (!item.IsMusic && !item.IsImage && !item.IsBook)
+                            @if (!item.IsMusic && !item.IsImage && !item.IsBook && !IsComic(item))
                             {
                                 <span class="card-body d-flex flex-column w-100 text-center">
                                     <span class="fw-semibold text-break">@item.Name</span>
@@ -495,6 +502,11 @@
 @if (_imageViewerStartId is not null)
 {
     <ImageCarouselViewer Images="_imageViewerImages" Category="@Category" StartId="_imageViewerStartId" OnExit="CloseImageViewer" />
+}
+
+@if (_comicViewerItemId is not null)
+{
+    <ComicViewer Category="@Category" ItemId="@_comicViewerItemId" OnExit="CloseComicViewer" />
 }
 
 @if (_conversionQueued)
@@ -688,6 +700,7 @@
     private string? _previewingVideoId;
     private List<ArchiveItemDto> _imageViewerImages = [];
     private string? _imageViewerStartId;
+    private string? _comicViewerItemId;
     private CancellationTokenSource? _mediaPollingCts;
     private bool _isLoading = true;
     private bool _operationPending;
@@ -817,6 +830,12 @@
             return;
         }
 
+        if (IsComic(item))
+        {
+            _comicViewerItemId = item.Id;
+            return;
+        }
+
         if (item.IsTextDocument)
         {
             if (OnTextDocumentSelected.HasDelegate)
@@ -864,6 +883,8 @@
         _imageViewerImages = [];
         _imageViewerStartId = null;
     }
+
+    private void CloseComicViewer() => _comicViewerItemId = null;
 
     private async Task SelectVideoAsync(ArchiveItemDto item)
     {
@@ -1614,9 +1635,14 @@
     private void ClearPreview() => _previewingVideoId = null;
 
     private static string CardButtonCssClass(ArchiveItemDto item) =>
-        item.IsMusic || item.IsImage || item.IsBook
+        item.IsMusic || item.IsImage || item.IsBook || IsComic(item)
             ? "archive-cover-card card-body btn btn-link text-decoration-none text-body d-flex flex-column align-items-center p-0 overflow-hidden"
             : "card-body btn btn-link text-decoration-none text-body d-flex flex-column align-items-center gap-2 p-0";
+
+    // The extension fallback keeps an already-uploaded CBZ actionable if a browser still has a
+    // cached listing contract from before the server supplied IsComic.
+    private static bool IsComic(ArchiveItemDto item) =>
+        item.IsComic || string.Equals(item.Extension, ".cbz", StringComparison.OrdinalIgnoreCase);
 
     private async Task<ArchiveListingDto?> SendMutationAsync(Func<Task<HttpResponseMessage>> action)
     {

@@ -36,6 +36,7 @@ Table of contents
 | Audio | ✅ | Browse and play `.mp3`, `.m4a`, and `.wav` files, including album artwork from `.png`, `.jpg`, or `.jpeg`. |
 | Playlists | ✅ | Play every video/audio file in a folder (including subfolders) as a queue, with a YouTube-style player-and-queue view, auto-advance, Fill-tab expand, and resume of the same track and position across navigation. |
 | Images | ✅ | Browse and view `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, and `.ico` raster images in the archive carousel; SVG remains unsupported. |
+| Comics | ✅ | Browse and read `.cbz` comics as read-only, single-page viewers with bounded ZIP safety limits. |
 | Books | ✅ | Read `.epub` books with progress, highlights, and notes. |
 | Text documents | ✅ | View and edit `.md`, `.markdown`, and `.txt` documents. |
 | PDF documents | ✅ | Browse and open `.pdf` documents. |

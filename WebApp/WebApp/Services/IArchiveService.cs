@@ -47,6 +47,12 @@ internal interface IArchiveService
 
     bool TryResolveImage(string categoryKey, string itemId, out ArchiveItemEntry? item);
 
+    bool TryResolveComic(string categoryKey, string itemId, out ArchiveItemEntry? item)
+    {
+        item = null;
+        return false;
+    }
+
     bool TryResolveBook(string categoryKey, string itemId, out ArchiveItemEntry? item);
 
     bool TryResolveTextDocument(string categoryKey, string itemId, out ArchiveItemEntry? item);
