@@ -3,17 +3,11 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 
-<section class="epub-reader card position-fixed top-0 start-0 w-100 h-100 overflow-hidden border-0 rounded-0 d-flex flex-column"
+<section @ref="_readerRef" class="epub-reader card position-fixed top-0 start-0 w-100 h-100 overflow-hidden border-0 rounded-0 d-flex flex-column"
          aria-label="Book reader">
     @if (_isToolbarCollapsed)
     {
-        <button class="btn btn-secondary shadow epub-reader-toolbar-show-button d-inline-flex align-items-center justify-content-center p-2"
-                type="button"
-                aria-label="Show reader toolbar"
-                title="Show reader toolbar"
-                @onclick="ShowToolbar">
-            <i class="bi bi-arrow-bar-down" aria-hidden="true"></i>
-        </button>
+        <button class="epub-reader-toolbar-reveal-zone" type="button" aria-label="Show reader toolbar" title="Show reader toolbar" @onclick="ShowToolbar"></button>
     }
 
     <div class="epub-reader-toolbars @(_isToolbarCollapsed ? "d-none" : "")">
@@ -132,6 +126,10 @@
                     aria-label="Search in book"
                     title="Search (coming soon)">
                 <i class="bi bi-search" aria-hidden="true"></i>
+            </button>
+            <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2" type="button"
+                    aria-label="@(_isFullscreen ? "Exit full screen" : "Full screen")" title="@(_isFullscreen ? "Exit full screen" : "Full screen")" aria-pressed="@_isFullscreen" @onclick="ToggleFullscreenAsync">
+                <i class="bi @(_isFullscreen ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand")" aria-hidden="true"></i>
             </button>
 
             <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
@@ -292,9 +290,12 @@
     private bool _selectionMenuAbove;
     private string? _loadedItemId;
     private ElementReference _contentRef;
+    private ElementReference _readerRef;
     private IJSObjectReference? _module;
     private DotNetObjectReference<EpubReader>? _pageNavigationReference;
+    private bool _isFullscreen;
     private CancellationTokenSource? _statusCts;
+    private CancellationTokenSource? _toolbarHideCts;
 
     private bool _pendingPaginationApply;
     private bool _contentPaddingDefaultPending;
@@ -362,9 +363,11 @@
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/ebookReader.js");
             _pageNavigationReference = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("registerFullscreenChange", _readerRef, _pageNavigationReference);
             await _module.InvokeVoidAsync("registerPageNavigation", _pageNavigationReference);
             await _module.InvokeVoidAsync("registerTapNavigation", _contentRef, _pageNavigationReference);
             await _module.InvokeVoidAsync("registerSelectionObserver", _contentRef, _pageNavigationReference);
+            ArmToolbarHideTimer();
             if (await ApplyResponsiveContentPaddingDefaultAsync())
             {
                 StateHasChanged();
@@ -398,7 +401,7 @@
         _selectionMenuLeft = 0;
         _selectionMenuTop = 0;
         _selectionMenuAbove = false;
-        _isToolbarCollapsed = true;
+        _isToolbarCollapsed = false;
         _fontSizeIndex = 2;
         _fontFamily = "Montserrat";
         _lineHeightIndex = 1;
@@ -407,6 +410,15 @@
         _pageIndex = 0;
         _pageCount = 1;
         _currentWordOffset = 0;
+    }
+
+    private Task ToggleFullscreenAsync() => _module is null ? Task.CompletedTask : _module.InvokeVoidAsync("toggleFullscreen", _readerRef).AsTask();
+
+    [JSInvokable]
+    public Task OnFullscreenChanged(bool isFullscreen)
+    {
+        _isFullscreen = isFullscreen;
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task<bool> ApplyResponsiveContentPaddingDefaultAsync()
@@ -560,6 +572,21 @@
     {
         _isToolbarCollapsed = false;
         RequestPaginationReflow();
+        ArmToolbarHideTimer();
+    }
+
+    private void ArmToolbarHideTimer()
+    {
+        _toolbarHideCts?.Cancel();
+        _toolbarHideCts?.Dispose();
+        _toolbarHideCts = new CancellationTokenSource();
+        _ = HideToolbarAfterDelayAsync(_toolbarHideCts.Token);
+    }
+
+    private async Task HideToolbarAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken); _isToolbarCollapsed = true; RequestPaginationReflow(); await InvokeAsync(StateHasChanged); }
+        catch (OperationCanceledException) { }
     }
 
     private void DecreaseTextWidth()
@@ -899,6 +926,8 @@
         _statusMessage = message;
         _statusCts?.Cancel();
         _statusCts?.Dispose();
+        _toolbarHideCts?.Cancel();
+        _toolbarHideCts?.Dispose();
         _statusCts = new CancellationTokenSource();
         _ = ClearStatusAfterDelayAsync(_statusCts.Token);
     }
@@ -943,6 +972,7 @@
     {
         await SaveProgressAsync();
         await UnregisterPageNavigationAsync();
+        if (_module is not null) await _module.InvokeVoidAsync("unregisterFullscreenChange", _readerRef);
         await OnClose.InvokeAsync();
     }
 

@@ -168,6 +168,7 @@
                 }
 
                 <div class="btn-group ms-auto" role="group" aria-label="Exit">
+                    <button class="btn @ActionCssClass" type="button" aria-label="@(_isFullscreen ? "Exit full screen" : "Full screen")" title="@(_isFullscreen ? "Exit full screen" : "Full screen")" aria-pressed="@_isFullscreen" @onclick="ToggleFullscreenAsync"><i class="bi @(_isFullscreen ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand")" aria-hidden="true"></i></button>
                     <button class="btn @ToggleCssClass(true)"
                             type="button"
                             aria-label="Exit fill browser tab"
@@ -202,6 +203,7 @@
     private DotNetObjectReference<ImageCarouselViewer>? _dotNetReference;
     private CancellationTokenSource? _controlsHideCancellation;
     private ElementReference _viewport;
+    private bool _isFullscreen;
     private PanSession? _pan;
     private int _currentIndex;
     private double _zoom = ZoomDefault;
@@ -244,6 +246,7 @@
                 _dotNetReference ??= DotNetObjectReference.Create(this);
                 await _module.InvokeVoidAsync("enterFillTab", _dotNetReference);
                 await _module.InvokeVoidAsync("addArrowKeyNavigation", _dotNetReference);
+                await _module.InvokeVoidAsync("registerVideoFullscreenChange", _viewport, _dotNetReference);
                 ArmControlsHideTimer();
             }
         }
@@ -251,6 +254,9 @@
 
     [JSInvokable]
     public async Task ExitFillTabFromEscapeAsync() => await ExitAsync();
+
+    [JSInvokable] public Task OnVideoFullscreenChanged(bool isFullscreen) { _isFullscreen = isFullscreen; return InvokeAsync(StateHasChanged); }
+    private Task ToggleFullscreenAsync() => _module is null ? Task.CompletedTask : _module.InvokeVoidAsync("toggleVideoFullscreen", _viewport).AsTask();
 
     [JSInvokable]
     public async Task SelectPreviousFromKeyboardAsync()
@@ -735,6 +741,7 @@
             {
                 await _module.InvokeVoidAsync("removeArrowKeyNavigation");
                 await _module.InvokeVoidAsync("exitFillTab");
+                await _module.InvokeVoidAsync("unregisterVideoFullscreenChange", _viewport);
             }
         }
         finally

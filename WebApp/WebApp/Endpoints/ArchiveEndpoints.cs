@@ -18,6 +18,8 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/audio", StreamAudio);
         endpoints.MapGet("/api/archive/{category}/items/{id}/cover", GetAlbumCover);
         endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic", GetComic);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/pages/{index:int}", GetComicPage);
         endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail);
         endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
         endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
@@ -545,6 +547,37 @@ internal static class ArchiveEndpoints
         }
 
         return Results.File(item.PhysicalPath, contentType, lastModified: item.LastWriteTimeUtc);
+    }
+
+    private static IResult GetComic(string category, string id, IArchiveService archive, IComicBookService comics, ILogger<Program> logger)
+    {
+        if (!archive.TryResolveComic(category, id, out var item) || item is null)
+        {
+            logger.LogWarning("Comic metadata request could not resolve opaque archive item. Category={Category} ItemId={ItemId}", category, id);
+            return Results.NotFound();
+        }
+        if (!comics.TryGetMetadata(item, out var metadata) || metadata is null)
+        {
+            logger.LogWarning("Comic metadata request was rejected while reading CBZ content. Category={Category} ItemId={ItemId}", category, id);
+            return Results.NotFound();
+        }
+        logger.LogInformation("Comic metadata returned. Category={Category} ItemId={ItemId} PageCount={PageCount}", category, id, metadata.PageCount);
+        return Results.Ok(new ComicBookDto(item.Name, metadata.PageCount));
+    }
+
+    private static IResult GetComicPage(string category, string id, int index, IArchiveService archive, IComicBookService comics, ILogger<Program> logger)
+    {
+        if (!archive.TryResolveComic(category, id, out var item) || item is null)
+        {
+            logger.LogWarning("Comic page request could not resolve opaque archive item. Category={Category} ItemId={ItemId} Index={Index}", category, id, index);
+            return Results.NotFound();
+        }
+        if (!comics.TryGetPage(item, index, out var page) || page is null)
+        {
+            logger.LogWarning("Comic page request was rejected while reading CBZ content. Category={Category} ItemId={ItemId} Index={Index}", category, id, index);
+            return Results.NotFound();
+        }
+        return Results.File(page.Bytes, page.ContentType);
     }
 
     private static IResult GetThumbnail(
@@ -1142,6 +1175,7 @@ internal static class ArchiveEndpoints
             BookAuthor: bookAuthor,
             IsTextDocument: item.IsTextDocument,
             IsPdfDocument: item.IsPdfDocument,
+            IsComic: item.IsComic,
             PdfUrl: PdfUrl(item),
             HasPlayableMedia: item.HasPlayableMedia,
             IsConvertibleVideo: item.IsConvertibleVideo);
@@ -1210,6 +1244,7 @@ internal static class ArchiveEndpoints
             IsMusic: item.IsMusic,
             AudioUrl: AudioUrl(item),
             AlbumCoverUrl: AlbumCoverUrl(item),
+            IsComic: item.IsComic,
             HasPlayableMedia: item.HasPlayableMedia,
             IsConvertibleVideo: item.IsConvertibleVideo);
     }
@@ -1285,6 +1320,7 @@ internal static class ArchiveEndpoints
             item.IsMusic,
             AudioUrl(item),
             AlbumCoverUrl(item),
+            IsComic: item.IsComic,
             HasPlayableMedia: item.HasPlayableMedia,
             IsConvertibleVideo: item.IsConvertibleVideo);
     }
