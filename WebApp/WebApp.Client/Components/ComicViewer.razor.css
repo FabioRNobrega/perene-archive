@@ -1,7 +1,18 @@
-.comic-viewer { z-index: 5; }
-.comic-toolbar { background: rgba(8,10,9,.92); min-height: 56px; }
-.comic-page { overflow: hidden; touch-action: pan-y; }
+.comic-viewer { z-index: 5; background-color: var(--bs-body-bg); color: var(--bs-body-color); }
+.comic-toolbar { flex: 0 0 auto; min-height: 56px; z-index: 2; }
+.comic-toolbar .btn { min-width: 2.5rem; min-height: 2.5rem; }
+.comic-toolbar-show-button { position: absolute; top: .5rem; right: .5rem; z-index: 3; min-width: 2.5rem; min-height: 2.5rem; }
+.comic-page { min-height: 0; touch-action: pan-y; }
+.comic-page.comic-fit-height { overflow: hidden; }
+.comic-page.comic-fit-width { overflow: auto; align-items: flex-start !important; }
 .comic-page img { object-fit: contain; max-width: 100%; max-height: 100%; }
 .comic-page img.fit-height { height: 100%; width: auto; }
-.comic-page img.fit-width { width: 100%; height: auto; }
+.comic-page img.fit-width { width: 100%; height: auto; max-height: none; object-fit: initial; }
 .comic-tap-zone { position: absolute; top: 0; bottom: 0; width: 25%; border: 0; background: transparent; z-index: 1; }
+.comic-progress-footer { flex: 0 0 auto; z-index: 2; }
+
+@media (max-width: 36rem) {
+    .comic-toolbar { gap: .35rem !important; }
+    .comic-toolbar .btn-group { flex: 0 0 auto; }
+    .comic-toolbar .btn-group:last-of-type .btn { padding-inline: .45rem; font-size: .8rem; }
+}
