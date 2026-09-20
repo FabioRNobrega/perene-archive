@@ -20,6 +20,8 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage);
         endpoints.MapGet("/api/archive/{category}/items/{id}/comic", GetComic);
         endpoints.MapGet("/api/archive/{category}/items/{id}/comic/pages/{index:int}", GetComicPage);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail);
         endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
         endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
@@ -578,6 +580,33 @@ internal static class ArchiveEndpoints
             return Results.NotFound();
         }
         return Results.File(page.Bytes, page.ContentType);
+    }
+
+    private static async Task<IResult> GetComicProgressAsync(string category, string id, IArchiveService archive, IComicProgressService progressService, CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveComic(category, id, out var item) || item is null) return Results.NotFound();
+        try
+        {
+            var progress = await progressService.LoadProgressAsync(category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+            return Results.Text(System.Text.Json.JsonSerializer.Serialize(progress), "application/json");
+        }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+    }
+
+    private static async Task<IResult> SaveComicProgressAsync(string category, string id, ComicProgressDto request, IArchiveService archive, IComicProgressService progressService, CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveComic(category, id, out var item) || item is null) return Results.NotFound();
+        if (request.PageIndex < 0) return Results.BadRequest(new { error = "A valid page index is required to save progress." });
+        try
+        {
+            await progressService.SaveProgressAsync(category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, request, cancellationToken);
+            return Results.Ok();
+        }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Results.Problem(title: "Progress could not be saved.", detail: "The progress file could not be written.", statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     private static IResult GetThumbnail(

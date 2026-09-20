@@ -52,14 +52,17 @@
     private bool CanPrevious => _index > 0; private bool CanNext => _comic is { } c && _index < c.PageCount - 1;
     private string Status => _comic is null ? "" : $"Page {_index + 1} of {_comic.PageCount}";
     private string PageUrl => $"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/comic/pages/{_index}";
-    protected override async Task OnInitializedAsync() { try { _comic = await Http.GetFromJsonAsync<ComicBookDto>($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/comic"); if (_comic is null) _error = "This comic could not be opened."; } catch { _error = "This comic could not be opened."; } finally { _loading = false; } }
+    protected override async Task OnInitializedAsync() { try { _comic = await Http.GetFromJsonAsync<ComicBookDto>($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/comic"); if (_comic is null) _error = "This comic could not be opened."; else { var progress = await Http.GetFromJsonAsync<ComicProgressDto?>($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/comic/progress"); if (progress is not null && _comic.PageCount > 0) _index = Math.Clamp(progress.PageIndex, 0, _comic.PageCount - 1); } } catch { _error = "This comic could not be opened."; } finally { _loading = false; } }
     protected override async Task OnAfterRenderAsync(bool first) { if (!first) return; _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/videoEditor.js"); _reference = DotNetObjectReference.Create(this); await _module.InvokeVoidAsync("registerVideoFullscreenChange", _viewer, _reference); _fillTab.Select(ItemId); if (_fillTab.Enter()) { await _module.InvokeVoidAsync("enterFillTab", _reference); await _module.InvokeVoidAsync("addArrowKeyNavigation", _reference); } ArmToolbarHideTimer(); }
     [JSInvokable] public Task ExitFillTabFromEscapeAsync() => ExitAsync();
-    [JSInvokable] public Task SelectPreviousFromKeyboardAsync() { Previous(); return InvokeAsync(StateHasChanged); }
-    [JSInvokable] public Task SelectNextFromKeyboardAsync() { Next(); return InvokeAsync(StateHasChanged); }
+    [JSInvokable] public async Task SelectPreviousFromKeyboardAsync() { await PreviousAsync(); await InvokeAsync(StateHasChanged); }
+    [JSInvokable] public async Task SelectNextFromKeyboardAsync() { await NextAsync(); await InvokeAsync(StateHasChanged); }
     [JSInvokable] public Task OnVideoFullscreenChanged(bool isFullscreen) { _isFullscreen = isFullscreen; return InvokeAsync(StateHasChanged); }
-    private void Previous() { if (CanPrevious) _index--; }
-    private void Next() { if (CanNext) _index++; }
+    private Task Previous() => NavigateAsync(-1);
+    private Task Next() => NavigateAsync(1);
+    private Task PreviousAsync() => NavigateAsync(-1);
+    private Task NextAsync() => NavigateAsync(1);
+    private async Task NavigateAsync(int direction) { if ((direction < 0 && !CanPrevious) || (direction > 0 && !CanNext)) return; _index += direction; try { using var response = await Http.PutAsJsonAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/comic/progress", new ComicProgressDto(_index)); } catch (HttpRequestException) { } }
     private void ShowToolbar() { _toolbarCollapsed = false; ArmToolbarHideTimer(); }
     private void HideToolbar() => _toolbarCollapsed = true;
     private void ArmToolbarHideTimer()
