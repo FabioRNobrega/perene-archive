@@ -429,7 +429,7 @@
                             else if (IsComic(item))
                             {
                                 <span class="archive-cover-tile book-cover-tile ratio w-100 bg-body-tertiary" style="--bs-aspect-ratio: 150%;" aria-hidden="true">
-                                    <span class="d-flex align-items-center justify-content-center h-100"><i class="bi bi-journal-richtext display-1 lh-1 text-primary" aria-hidden="true"></i></span>
+                                    <img src="@ComicCoverUrl(item)" alt="" class="w-100 h-100 object-fit-cover" />
                                     <span class="archive-cover-overlay position-absolute start-0 end-0 bottom-0 d-flex flex-column gap-1 text-start p-3"><span class="fw-semibold text-truncate">@FormatDisplayName(item)</span><span class="small">CBZ comic</span></span>
                                 </span>
                             }
@@ -1643,6 +1643,9 @@
     // cached listing contract from before the server supplied IsComic.
     private static bool IsComic(ArchiveItemDto item) =>
         item.IsComic || string.Equals(item.Extension, ".cbz", StringComparison.OrdinalIgnoreCase);
+
+    private string ComicCoverUrl(ArchiveItemDto item) =>
+        $"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(item.Id)}/comic/pages/0";
 
     private async Task<ArchiveListingDto?> SendMutationAsync(Func<Task<HttpResponseMessage>> action)
     {
