@@ -478,3 +478,21 @@ export function getVisibleWordOffset(container, chapterWordCount) {
 
     return Math.round(getPageFraction(container) * wordCount);
 }
+const fullscreenHandlers = new WeakMap();
+
+export function registerFullscreenChange(element, dotNetReference) {
+    const handler = () => dotNetReference.invokeMethodAsync("OnFullscreenChanged", document.fullscreenElement === element).catch(() => { });
+    fullscreenHandlers.set(element, handler);
+    document.addEventListener("fullscreenchange", handler);
+}
+
+export function unregisterFullscreenChange(element) {
+    const handler = fullscreenHandlers.get(element);
+    if (handler) document.removeEventListener("fullscreenchange", handler);
+    fullscreenHandlers.delete(element);
+}
+
+export async function toggleFullscreen(element) {
+    if (document.fullscreenElement === element) await document.exitFullscreen();
+    else await element.requestFullscreen();
+}
