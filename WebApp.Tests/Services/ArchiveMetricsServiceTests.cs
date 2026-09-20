@@ -14,6 +14,11 @@ public sealed class ArchiveMetricsServiceTests
         File.WriteAllText(Path.Combine(directory.Path, "song.mp3"), "x");
         File.WriteAllText(Path.Combine(directory.Path, "book.epub"), "x");
         File.WriteAllText(Path.Combine(directory.Path, "photo.jpg"), "x");
+        File.WriteAllText(Path.Combine(directory.Path, "animation.gif"), "x");
+        File.WriteAllText(Path.Combine(directory.Path, "photo.webp"), "x");
+        File.WriteAllText(Path.Combine(directory.Path, "photo.avif"), "x");
+        File.WriteAllText(Path.Combine(directory.Path, "photo.bmp"), "x");
+        File.WriteAllText(Path.Combine(directory.Path, "favicon.ico"), "x");
         File.WriteAllText(Path.Combine(directory.Path, "document.pdf"), "x");
         File.WriteAllText(Path.Combine(directory.Path, "notes.md"), "x");
         File.WriteAllText(Path.Combine(directory.Path, "unknown.bin"), "x");
@@ -42,7 +47,7 @@ public sealed class ArchiveMetricsServiceTests
         Assert.Equal(2 * categoryCount, metrics.VideoFiles);
         Assert.Equal(categoryCount, metrics.AudioFiles);
         Assert.Equal(categoryCount, metrics.EpubFiles);
-        Assert.Equal(categoryCount, metrics.ImageFiles);
+        Assert.Equal(6 * categoryCount, metrics.ImageFiles);
         Assert.Equal(categoryCount, metrics.PdfFiles);
         Assert.Equal(categoryCount, metrics.TextDocumentFiles);
         Assert.Equal(categoryCount, metrics.OtherFiles);
@@ -85,6 +90,7 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveListing MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
         public ArchiveListing EmptyTrash(string categoryKey) => throw new NotSupportedException();
+        public bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveMusic(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveImage(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();

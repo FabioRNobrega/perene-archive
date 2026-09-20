@@ -1045,7 +1045,12 @@ internal static class ArchiveEndpoints
         {
             [".png"] = "image/png",
             [".jpg"] = "image/jpeg",
-            [".jpeg"] = "image/jpeg"
+            [".jpeg"] = "image/jpeg",
+            [".gif"] = "image/gif",
+            [".webp"] = "image/webp",
+            [".avif"] = "image/avif",
+            [".bmp"] = "image/bmp",
+            [".ico"] = "image/x-icon"
         };
 
     private static ArchiveListingDto ToDto(ArchiveListing listing) =>

@@ -153,13 +153,19 @@
                 <div class="btn-group" role="group" aria-label="Crop">
                     <button class="btn @ToggleCssClass(_cropMode)"
                             type="button"
+                            disabled="@(!CanCropCurrentImage)"
                             aria-label="Crop image"
                             title="Crop image"
                             aria-pressed="@_cropMode"
+                            aria-describedby="@CropDescriptionId"
                             @onclick="ToggleCropModeAsync">
                         <i class="bi bi-scissors" aria-hidden="true"></i>
                     </button>
                 </div>
+                @if (!CanCropCurrentImage)
+                {
+                    <span id="crop-unavailable" class="small text-white-50" role="status">Cropping is available only for JPEG and PNG images.</span>
+                }
 
                 <div class="btn-group ms-auto" role="group" aria-label="Exit">
                     <button class="btn @ToggleCssClass(true)"
@@ -213,6 +219,8 @@
 
     private bool CanSelectPrevious => _currentIndex > 0;
     private bool CanSelectNext => _currentIndex < Images.Count - 1;
+    private bool CanCropCurrentImage => Images.Count > 0 && IsCropSupported(Images[_currentIndex].Name);
+    private string? CropDescriptionId => CanCropCurrentImage ? null : "crop-unavailable";
     private string SaturationProgressStyle =>
         $"--saturation-progress: {Invariant(Math.Clamp(_saturation.Value / SaturationState.Max * 100, 0, 100))}%";
 
@@ -395,6 +403,11 @@
 
     private async Task ToggleCropModeAsync()
     {
+        if (!CanCropCurrentImage)
+        {
+            return;
+        }
+
         if (_cropMode)
         {
             CancelCrop();
@@ -407,7 +420,7 @@
 
     private async Task EnterCropModeAsync()
     {
-        if (Images.Count == 0)
+        if (!CanCropCurrentImage)
         {
             return;
         }
@@ -544,7 +557,7 @@
 
     private async Task ConfirmCropAsync()
     {
-        if (_cropRect is null || _cropImageBounds is null || _cropSaving || Images.Count == 0)
+        if (_cropRect is null || _cropImageBounds is null || _cropSaving || !CanCropCurrentImage)
         {
             return;
         }
@@ -642,6 +655,12 @@
     }
 
     private static string Invariant(double value) => value.ToString("0", CultureInfo.InvariantCulture);
+
+    private static bool IsCropSupported(string imageName) =>
+        Path.GetExtension(imageName) is var extension &&
+        (string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase));
 
     private static string ToggleCssClass(bool active) => active
         ? "btn-primary d-inline-flex align-items-center justify-content-center p-2"

@@ -8,11 +8,18 @@ internal sealed class ImageCropService(
     IImageCropGenerator generator) : IImageCropService
 {
     internal const string CutsFolderName = "cuts";
+    private static readonly HashSet<string> CropSupportedExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
 
     public async Task<ImageCropOutcome> CropAsync(
         string categoryKey, string itemId, int x, int y, int width, int height, CancellationToken cancellationToken)
     {
         if (!archive.TryResolveImage(categoryKey, itemId, out var item) || item is null || item.Extension is null)
+        {
+            return ImageCropOutcome.NotFound();
+        }
+
+        if (!CropSupportedExtensions.Contains(item.Extension))
         {
             return ImageCropOutcome.NotFound();
         }

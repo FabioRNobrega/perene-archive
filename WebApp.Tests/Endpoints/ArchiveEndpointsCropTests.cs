@@ -71,6 +71,28 @@ public sealed class ArchiveEndpointsCropTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("animation.gif")]
+    [InlineData("photo.webp")]
+    [InlineData("photo.avif")]
+    [InlineData("photo.bmp")]
+    [InlineData("favicon.ico")]
+    public async Task Crop_returns_not_found_for_added_raster_formats(string fileName)
+    {
+        using var root = CreateArchive();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "Pictures", fileName), [1, 2, 3]);
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/photos/items"))!;
+        var item = Assert.Single(listing.Items);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/archive/photos/items/{item.Id}/crop", new { X = 0, Y = 0, Width = 1, Height = 1 });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(Directory.Exists(Path.Combine(root.Path, "Pictures", "cuts")));
+    }
+
     private sealed record CropResponse(string Id, string Name, string ImageUrl);
 
     private static async Task CreateFixtureImageAsync(string path, int width, int height)

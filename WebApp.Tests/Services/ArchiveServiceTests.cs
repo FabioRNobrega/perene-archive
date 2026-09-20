@@ -575,6 +575,41 @@ public sealed class ArchiveServiceTests
         Assert.False(document.IsMusic);
     }
 
+    [Theory]
+    [InlineData("animation.GIF")]
+    [InlineData("photo.webp")]
+    [InlineData("photo.avif")]
+    [InlineData("photo.bmp")]
+    [InlineData("favicon.ico")]
+    public void Added_raster_image_formats_are_classified_resolved_and_uploadable(string fileName)
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Pictures", fileName));
+        var service = CreateService(root.Path);
+
+        var item = Assert.Single(service.List("photos", null).Items);
+
+        Assert.True(item.IsImage);
+        Assert.True(service.TryResolveImage("photos", item.Id, out var resolved));
+        Assert.Equal(fileName, resolved!.Name);
+        Assert.Equal(Path.Combine(root.Path, "Documents", fileName),
+            service.ValidateUploadDestination("documents", null, fileName).FinalPath);
+    }
+
+    [Fact]
+    public void Svg_remains_non_image_and_is_not_uploadable()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Pictures", "vector.svg"));
+        var service = CreateService(root.Path);
+
+        var item = Assert.Single(service.List("photos", null).Items);
+
+        Assert.False(item.IsImage);
+        Assert.False(service.TryResolveImage("photos", item.Id, out _));
+        Assert.Throws<ArchiveValidationException>(() => service.ValidateUploadDestination("documents", null, "vector.svg"));
+    }
+
     [Fact]
     public void TryResolveImage_returns_false_for_folders_and_non_image_files()
     {

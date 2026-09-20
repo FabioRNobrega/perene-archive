@@ -54,6 +54,27 @@ public sealed class ImageCropServiceTests
         Assert.Equal(ImageCropOutcomeStatus.OutOfBounds, outcome.Status);
     }
 
+    [Theory]
+    [InlineData("animation.gif")]
+    [InlineData("photo.webp")]
+    [InlineData("photo.avif")]
+    [InlineData("photo.bmp")]
+    [InlineData("favicon.ico")]
+    public async Task Added_raster_image_formats_are_not_sent_to_the_crop_generator(string fileName)
+    {
+        using var root = CreateArchive();
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "Pictures", fileName), [1, 2, 3]);
+        var archive = CreateArchiveService(root.Path);
+        var item = Assert.Single(archive.List("photos", null).Items);
+        var generator = new FakeGenerator(ImageCropGenerationResult.Success());
+        var service = new ImageCropService(archive, new ImageCropNamingService(), generator);
+
+        var outcome = await service.CropAsync("photos", item.Id, 0, 0, 1, 1, CancellationToken.None);
+
+        Assert.Equal(ImageCropOutcomeStatus.NotFound, outcome.Status);
+        Assert.False(generator.WasCalled);
+    }
+
     private static ArchiveService CreateArchiveService(string path) =>
         new(Options.Create(new ArchiveRootOptions { Path = path }));
 
@@ -70,9 +91,14 @@ public sealed class ImageCropServiceTests
 
     private sealed class FakeGenerator(ImageCropGenerationResult result) : IImageCropGenerator
     {
+        public bool WasCalled { get; private set; }
+
         public Task<ImageCropGenerationResult> CropAsync(
-            string sourcePath, string destinationPath, int x, int y, int width, int height, CancellationToken cancellationToken) =>
-            Task.FromResult(result);
+            string sourcePath, string destinationPath, int x, int y, int width, int height, CancellationToken cancellationToken)
+        {
+            WasCalled = true;
+            return Task.FromResult(result);
+        }
     }
 
     private sealed class TemporaryDirectory : IDisposable

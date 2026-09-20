@@ -33,7 +33,7 @@ public sealed class ArchiveEndpointsTests
 
         using var fileResponse = await client.GetAsync($"/api/archive/downloads/items/{file.Id}/download");
         Assert.Equal(HttpStatusCode.OK, fileResponse.StatusCode);
-        Assert.Contains("attachment", fileResponse.Content.Headers.ContentDisposition!.Disposition);
+        Assert.Contains("attachment", fileResponse.Content.Headers.ContentDisposition!.DispositionType);
         Assert.Contains("receipt.bin", fileResponse.Content.Headers.ContentDisposition.ToString());
         Assert.Equal(source, await fileResponse.Content.ReadAsByteArrayAsync());
 
@@ -732,6 +732,35 @@ public sealed class ArchiveEndpointsTests
         Assert.Equal(pngFixture, await pngResponse.Content.ReadAsByteArrayAsync());
     }
 
+    [Theory]
+    [InlineData("animation.gif", "image/gif")]
+    [InlineData("photo.webp", "image/webp")]
+    [InlineData("photo.avif", "image/avif")]
+    [InlineData("photo.bmp", "image/bmp")]
+    [InlineData("favicon.ico", "image/x-icon")]
+    public async Task Added_raster_image_formats_are_listed_and_served_with_their_contract_media_type(string fileName, string contentType)
+    {
+        using var root = CreateArchive();
+        byte[] fixture = [1, 2, 3, 4];
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "Pictures", fileName), fixture);
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+
+        using var listingResponse = await client.GetAsync("/api/archive/photos/items");
+        var json = await listingResponse.Content.ReadAsStringAsync();
+        var listing = await listingResponse.Content.ReadFromJsonAsync<ArchiveListingDto>();
+        var item = Assert.Single(listing!.Items);
+
+        Assert.True(item.IsImage);
+        Assert.NotNull(item.ImageUrl);
+        Assert.DoesNotContain(root.Path, json);
+
+        using var imageResponse = await client.GetAsync(item.ImageUrl);
+        Assert.Equal(HttpStatusCode.OK, imageResponse.StatusCode);
+        Assert.Equal(contentType, imageResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(fixture, await imageResponse.Content.ReadAsByteArrayAsync());
+    }
+
     [Fact]
     public async Task Image_endpoint_returns_not_found_for_non_image_folder_and_unknown_ids()
     {
@@ -1123,9 +1152,9 @@ public sealed class ArchiveEndpointsTests
             AppContext.BaseDirectory,
             "../../../../WebApp/WebApp.Client/Pages/UtilitiesPages/VideoComposition.razor"));
 
-        Assert.Contains("bi-three-dots-vertical", archiveBrowser);
+        Assert.Contains("bi-plus", archiveBrowser);
         Assert.Contains("data-bs-toggle=\"dropdown\"", archiveBrowser);
-        Assert.Contains("dropdown-menu dropdown-menu-end", archiveBrowser);
+        Assert.Contains("dropdown-menu", archiveBrowser);
         Assert.Contains("ratio ratio-16x9", archiveBrowser);
         Assert.Contains("HoverPreviewUrl", archiveBrowser);
         Assert.Contains("AlbumCoverUrl", archiveBrowser);

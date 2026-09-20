@@ -81,7 +81,7 @@ internal sealed class ArchiveMetricsService(
         private static readonly HashSet<string> AudioExtensions =
             new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".m4a" };
         private static readonly HashSet<string> ImageExtensions =
-            new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
+            new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp", ".ico" };
         private static readonly HashSet<string> EpubExtensions =
             new(StringComparer.OrdinalIgnoreCase) { ".epub" };
         private static readonly HashSet<string> PdfExtensions =
