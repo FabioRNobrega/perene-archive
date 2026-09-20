@@ -10,13 +10,20 @@
     z-index: 4;
 }
 
-.epub-reader-toolbar-show-button {
+.epub-reader-toolbar-reveal-zone {
     position: absolute;
-    top: .5rem;
-    right: .5rem;
+    top: 0;
+    right: 0;
     z-index: 4;
-    min-width: 2.5rem;
-    min-height: 2.5rem;
+    width: 5rem;
+    height: 5rem;
+    border: 0;
+    background: transparent;
+}
+
+.epub-reader-toolbar-reveal-zone:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -4px;
 }
 
 .epub-reader-aa-panel {

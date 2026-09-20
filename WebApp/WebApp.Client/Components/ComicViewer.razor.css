@@ -1,7 +1,8 @@
 .comic-viewer { z-index: 5; background-color: var(--bs-body-bg); color: var(--bs-body-color); }
 .comic-toolbar { flex: 0 0 auto; min-height: 56px; z-index: 2; }
 .comic-toolbar .btn { min-width: 2.5rem; min-height: 2.5rem; }
-.comic-toolbar-show-button { position: absolute; top: .5rem; right: .5rem; z-index: 3; min-width: 2.5rem; min-height: 2.5rem; }
+.comic-toolbar-reveal-zone { position: absolute; top: 0; right: 0; z-index: 3; width: 5rem; height: 5rem; border: 0; background: transparent; }
+.comic-toolbar-reveal-zone:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: -4px; }
 .comic-page { min-height: 0; touch-action: pan-y; }
 .comic-page.comic-fit-height { overflow: hidden; }
 .comic-page.comic-fit-width { overflow: auto; align-items: flex-start !important; }
