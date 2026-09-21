@@ -402,6 +402,23 @@ public sealed class ArchiveServiceTests
         Assert.Equal(Path.Combine(root.Path, "Videos", "upload.ts"), upload.FinalPath);
     }
 
+    [Theory]
+    [InlineData("dvd.vob")]
+    [InlineData("dvd.VOB")]
+    public void Vob_files_are_convertible_and_uploadable_but_not_playable(string name)
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Videos", name));
+        var service = CreateService(root.Path);
+
+        var item = Assert.Single(service.List("videos", null).Items);
+        var upload = service.ValidateUploadDestination("videos", null, name);
+
+        Assert.True(item.IsConvertibleVideo);
+        Assert.False(item.IsVideo);
+        Assert.EndsWith(name, upload.FinalPath, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Folder_with_direct_video_reports_playable_media()
     {

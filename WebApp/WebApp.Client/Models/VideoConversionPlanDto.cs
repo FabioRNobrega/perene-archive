@@ -3,13 +3,16 @@ namespace WebApp.Client.Models;
 public sealed class VideoConversionSelectionDto
 {
     public VideoConversionSelectionDto() { }
-    public VideoConversionSelectionDto(string mode, int? outputHeight = null, string? qualityPreset = null, long? targetSizeBytes = null) => (Mode, OutputHeight, QualityPreset, TargetSizeBytes) = (mode, outputHeight, qualityPreset, targetSizeBytes);
+    public VideoConversionSelectionDto(string mode, int? outputHeight = null, string? qualityPreset = null, long? targetSizeBytes = null, int? selectedSubtitleStreamIndex = null, bool burnClosedCaptions = false) => (Mode, OutputHeight, QualityPreset, TargetSizeBytes, SelectedSubtitleStreamIndex, BurnClosedCaptions) = (mode, outputHeight, qualityPreset, targetSizeBytes, selectedSubtitleStreamIndex, burnClosedCaptions);
     public string Mode { get; set; } = "compress";
     public int? OutputHeight { get; set; }
     public string? QualityPreset { get; set; }
     public long? TargetSizeBytes { get; set; }
+    public int? SelectedSubtitleStreamIndex { get; set; }
+    public bool BurnClosedCaptions { get; set; }
 }
 public sealed record VideoConversionOptionDto(string Key, string Label, bool Recommended = false);
+public sealed record VideoConversionSubtitleOptionDto(int StreamIndex, string Codec, string? Language, string Label);
 public sealed record VideoConversionPlanDto(
     string SourceId, string SourceName, string SourceFileType, string VideoCodec, string? AudioCodec,
     int SourceWidth, int SourceHeight, double DurationSeconds, long? SourceSizeBytes,
@@ -17,4 +20,5 @@ public sealed record VideoConversionPlanDto(
     int VideoBitrate, int AudioBitrate, long EstimatedSizeBytes, long? EstimatedSavingsBytes,
     IReadOnlyList<VideoConversionOptionDto> Modes, IReadOnlyList<VideoConversionOptionDto> Resolutions,
     IReadOnlyList<VideoConversionOptionDto> QualityPresets, long MinimumTargetSizeBytes, long MaximumTargetSizeBytes,
+    IReadOnlyList<VideoConversionSubtitleOptionDto>? SubtitleOptions = null, bool HasClosedCaptions = false,
     string Limitation = "Embedded subtitles are not included in converted MP4 files.");

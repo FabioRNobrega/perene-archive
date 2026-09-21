@@ -60,8 +60,8 @@ internal static class ArchiveEndpoints
         if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
         var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
         if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
-        var selection = requestedSelection is null ? catalog.DefaultFor(media) : new VideoConversionSelection(requestedSelection.Mode, requestedSelection.OutputHeight, requestedSelection.QualityPreset, requestedSelection.TargetSizeBytes);
-        return !resolver.TryResolve(media, item.SizeBytes, selection, out var profile, out var error)
+        var selection = requestedSelection is null ? catalog.DefaultFor(media) : new VideoConversionSelection(requestedSelection.Mode, requestedSelection.OutputHeight, requestedSelection.QualityPreset, requestedSelection.TargetSizeBytes, requestedSelection.SelectedSubtitleStreamIndex, requestedSelection.BurnClosedCaptions);
+        return !resolver.TryResolve(media, item.SizeBytes, selection, out var profile, out var error, requireSelectedSubtitle: false)
             ? Results.BadRequest(new { error })
             : Results.Ok(ToPlanDto(item, media, profile!, catalog, options.Value));
     }
@@ -72,7 +72,7 @@ internal static class ArchiveEndpoints
         if (statuses.HasActiveSource(item.Id)) return Results.Conflict(new { error = "A conversion is already active for this file." });
         var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
         if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
-        var serverSelection = new VideoConversionSelection(selection.Mode, selection.OutputHeight, selection.QualityPreset, selection.TargetSizeBytes);
+        var serverSelection = new VideoConversionSelection(selection.Mode, selection.OutputHeight, selection.QualityPreset, selection.TargetSizeBytes, selection.SelectedSubtitleStreamIndex, selection.BurnClosedCaptions);
         if (!resolver.TryResolve(media, item.SizeBytes, serverSelection, out var profile, out var error)) return Results.BadRequest(new { error });
         var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile);
         statuses.Seed(job);
@@ -82,10 +82,12 @@ internal static class ArchiveEndpoints
 
     private static VideoConversionPlanDto ToPlanDto(ArchiveItemEntry item, VideoConversionProbeResult media, ResolvedVideoConversionProfile profile, ConversionProfileCatalog catalog, VideoConversionOptions options) => new(
         item.Id, item.Name, Path.GetExtension(item.Name).TrimStart('.').ToUpperInvariant(), media.VideoCodec, media.AudioCodec, media.Width, media.Height, media.Duration.TotalSeconds, item.SizeBytes,
-        new(profile.Selection.Mode, profile.Selection.OutputHeight, profile.Selection.QualityPreset, profile.Selection.TargetSizeBytes), profile.Label, profile.OutputWidth, profile.OutputHeight, profile.VideoBitrate, profile.AudioBitrate, profile.EstimatedSizeBytes, profile.EstimatedSavingsBytes,
+        new(profile.Selection.Mode, profile.Selection.OutputHeight, profile.Selection.QualityPreset, profile.Selection.TargetSizeBytes, profile.Selection.SelectedSubtitleStreamIndex, profile.Selection.BurnClosedCaptions), profile.Label, profile.OutputWidth, profile.OutputHeight, profile.VideoBitrate, profile.AudioBitrate, profile.EstimatedSizeBytes, profile.EstimatedSavingsBytes,
         [new("compatible", "Make compatible / preserve quality"), new("compress", "Compress")],
         catalog.HeightsFor(media).Select(height => new VideoConversionOptionDto(height.ToString(), height == media.Height ? "Original resolution" : $"{height}p", height == 720 && media.Height > 720)).ToList(),
-        [new("high", "Preserve quality"), new("balanced", "Balanced", true), new("compact", "Smaller file")], options.MinimumTargetSizeBytes, options.MaximumTargetSizeBytes);
+        [new("high", "Preserve quality"), new("balanced", "Balanced", true), new("compact", "Smaller file")], options.MinimumTargetSizeBytes, options.MaximumTargetSizeBytes,
+        media.SubtitleStreams?.Select(x => new VideoConversionSubtitleOptionDto(x.InputStreamIndex, x.Codec, x.Language, x.Label)).ToList(), media.HasClosedCaptions,
+        media.HasSubtitles ? "The selected embedded subtitle is permanently burned into the video and cannot be toggled later." : "Embedded subtitles are not included in converted MP4 files.");
 
     private static async Task<IResult> List(
         string category,

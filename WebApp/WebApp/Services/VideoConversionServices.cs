@@ -17,9 +17,17 @@ internal sealed class FfprobeVideoConversionProbe : IVideoConversionProbe
     public async Task<VideoConversionProbeResult?> ProbeAsync(string path, CancellationToken token)
     {
         var info = new ProcessStartInfo { FileName = "ffprobe", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (var arg in new[] { "-v", "error", "-show_entries", "format=format_name,duration:stream=codec_type,codec_name,bit_rate,width,height", "-of", "json", path }) info.ArgumentList.Add(arg);
-        try { using var p = Process.Start(info); if (p is null) return null; var output = await p.StandardOutput.ReadToEndAsync(token); await p.WaitForExitAsync(token); return p.ExitCode == 0 ? Parse(output) : null; }
+        foreach (var arg in new[] { "-v", "error", "-show_entries", "format=format_name,duration:stream=index,codec_type,codec_name,bit_rate,width,height:stream_tags=language", "-of", "json", path }) info.ArgumentList.Add(arg);
+        try { using var p = Process.Start(info); if (p is null) return null; var output = await p.StandardOutput.ReadToEndAsync(token); await p.WaitForExitAsync(token); var parsed = p.ExitCode == 0 ? Parse(output) : null; return parsed is null ? null : parsed with { HasClosedCaptions = await HasClosedCaptionsAsync(path, token) }; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or Win32Exception or JsonException) { return null; }
+    }
+    private static async Task<bool> HasClosedCaptionsAsync(string path, CancellationToken token)
+    {
+        var info = new ProcessStartInfo { FileName = "ffprobe", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+        foreach (var arg in new[] { "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#360", "-show_entries", "frame=best_effort_timestamp_time:frame_side_data=side_data_type", "-of", "json", path }) info.ArgumentList.Add(arg);
+        using var process = Process.Start(info); if (process is null) return false;
+        var output = await process.StandardOutput.ReadToEndAsync(token); await process.WaitForExitAsync(token);
+        return process.ExitCode == 0 && output.Contains("ATSC A53 Part 4 Closed Captions", StringComparison.Ordinal);
     }
     internal static VideoConversionProbeResult? Parse(string json)
     {
@@ -31,7 +39,26 @@ internal sealed class FfprobeVideoConversionProbe : IVideoConversionProbe
         var a = streams.FirstOrDefault(s => s.TryGetProperty("codec_type", out var t) && t.GetString() == "audio");
         var duration = format.TryGetProperty("duration", out var dp) && double.TryParse(dp.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds > 0 ? TimeSpan.FromSeconds(seconds) : TimeSpan.Zero;
         long? bitrate = v.TryGetProperty("bit_rate", out var bp) && long.TryParse(bp.GetString(), out var b) ? b : null;
-        return new(f.GetString() ?? "", vc.GetString() ?? "", a.ValueKind != JsonValueKind.Undefined && a.TryGetProperty("codec_name", out var ac) ? ac.GetString() : null, bitrate, w.GetInt32(), h.GetInt32(), duration, streams.Any(s => s.TryGetProperty("codec_type", out var t) && t.GetString() == "subtitle"));
+        var subtitles = streams
+            .Where(s => s.TryGetProperty("codec_type", out var t) && t.GetString() == "subtitle" && s.TryGetProperty("index", out var index) && index.TryGetInt32(out _))
+            .Select((s, ordinal) => CreateSubtitle(s, ordinal + 1))
+            .Where(s => s is not null).Select(s => s!).ToList();
+        return new(f.GetString() ?? "", vc.GetString() ?? "", a.ValueKind != JsonValueKind.Undefined && a.TryGetProperty("codec_name", out var ac) ? ac.GetString() : null, bitrate, w.GetInt32(), h.GetInt32(), duration, subtitles);
+    }
+    private static VideoConversionSubtitleStream? CreateSubtitle(JsonElement stream, int ordinal)
+    {
+        if (!stream.TryGetProperty("index", out var index) || !index.TryGetInt32(out var streamIndex) || streamIndex < 0) return null;
+        var codec = stream.TryGetProperty("codec_name", out var codecValue) ? SafeToken(codecValue.GetString(), 48) : null;
+        if (string.IsNullOrWhiteSpace(codec)) return null;
+        string? language = null;
+        if (stream.TryGetProperty("tags", out var tags) && tags.TryGetProperty("language", out var languageValue)) language = SafeToken(languageValue.GetString(), 32)?.ToLowerInvariant();
+        return new(streamIndex, codec, language, language is null ? $"Track {ordinal} (language unknown)" : $"Track {ordinal} ({language})");
+    }
+    private static string? SafeToken(string? value, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var token = new string(value.Trim().Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').Take(maximumLength).ToArray());
+        return token.Length == 0 ? null : token;
     }
 }
 internal sealed class MediaConversionPlanner(IOptions<VideoConversionOptions> options)
@@ -75,17 +102,22 @@ internal sealed class FfmpegVideoConversionGenerator(IVideoConversionProbe probe
  {
   if (job.Action == MediaAction.Keep) return new(true, true, Diagnostic: "Already browser-compatible at the configured bitrate.");
   if (!Matches(job.Source)) return new(false, false, Diagnostic: "Source changed before conversion started.");
-  var dest = naming.GetNextPath(job.Source); var temp = Path.Combine(Path.GetDirectoryName(dest)!, $".{Path.GetFileNameWithoutExtension(dest)}.{Guid.NewGuid():N}.tmp.mp4");
+  var dest = naming.GetNextPath(job.Source); var temp = Path.Combine(Path.GetDirectoryName(dest)!, $".{Path.GetFileNameWithoutExtension(dest)}.{Guid.NewGuid():N}.tmp.mp4"); var captions = $"{temp}.cc.srt";
   try {
    var drive = new DriveInfo(Path.GetPathRoot(dest)!); if (drive.AvailableFreeSpace < (job.Source.SizeBytes ?? 0) * 2 + options.Value.FreeSpaceReserveBytes) return new(false,false,Diagnostic:"Not enough free space for a safe conversion.");
-   var psi=new ProcessStartInfo { FileName="ffmpeg", UseShellExecute=false, RedirectStandardOutput=true, RedirectStandardError=true, CreateNoWindow=true }; foreach(var arg in arguments.Build(job.Source.PhysicalPath,temp,job,options.Value.H264Crf)) psi.ArgumentList.Add(arg);
+   if (job.Profile?.BurnClosedCaptions == true && !await ExtractClosedCaptionsAsync(job.Source.PhysicalPath, captions, token)) return new(false, false, Diagnostic:"Closed captions could not be extracted from this media.");
+   var psi=new ProcessStartInfo { FileName="ffmpeg", UseShellExecute=false, RedirectStandardOutput=true, RedirectStandardError=true, CreateNoWindow=true }; foreach(var arg in arguments.Build(job.Source.PhysicalPath,temp,job,options.Value.H264Crf, job.Profile?.BurnClosedCaptions == true ? captions : null)) psi.ArgumentList.Add(arg);
    using var p=Process.Start(psi); if(p is null)return new(false,false,Diagnostic:"ffmpeg failed to start."); if (!controller.RegisterProcess(job.JobId, p)) { try { p.Kill(); } catch { } return new(false,false,true,Diagnostic:"Conversion stopped."); } var progressTask=ReadProgressAsync(p.StandardOutput,reportProgress,token); var errorTask=p.StandardError.ReadToEndAsync(token); try { await p.WaitForExitAsync(token); } catch (OperationCanceledException) { try { if (!p.HasExited) p.WaitForExit(); } catch { } } finally { controller.UnregisterProcess(job.JobId,p); } await progressTask; var error=await errorTask; if(!controller.CanPublish(job.JobId)) return new(false,false,true,Diagnostic:"Conversion stopped."); if(p.ExitCode!=0)return new(false,false,Diagnostic:"ffmpeg could not convert this media."); reportProgress?.Invoke(new(null,null,true));
    if (!controller.CanPublish(job.JobId)) return new(false,false,true,Diagnostic:"Conversion stopped."); var output=await probe.ProbeAsync(temp,token); if(output is null || !IsValidMp4(output) || output.HasSubtitles) return new(false,false,Diagnostic: output?.HasSubtitles == true ? "Embedded subtitles could not be safely published to MP4." : "Converted output failed validation.");
    var outputSize = new FileInfo(temp).Length;
    if (job.Action == MediaAction.CompressVideo && !MeetsMinimumSavings(job.Source.SizeBytes, outputSize, options.Value.MinimumSavingsPercent)) return new(true,true,Diagnostic:$"Optimized output did not meet the configured {options.Value.MinimumSavingsPercent}% savings threshold.");
    if (!controller.CanPublish(job.JobId)) return new(false,false,true,Diagnostic:"Conversion stopped."); File.Move(temp,dest); return new(true,false,false,dest,outputSize);
-  } catch(OperationCanceledException){ return new(false,false,!controller.CanPublish(job.JobId),Diagnostic:"Conversion cancelled during shutdown."); } catch(Exception e) when(e is IOException or UnauthorizedAccessException or Win32Exception){ return new(false,false,Diagnostic:"Conversion could not publish output."); } finally { try { if(File.Exists(temp)) File.Delete(temp); } catch {} }
+  } catch(OperationCanceledException){ return new(false,false,!controller.CanPublish(job.JobId),Diagnostic:"Conversion cancelled during shutdown."); } catch(Exception e) when(e is IOException or UnauthorizedAccessException or Win32Exception){ return new(false,false,Diagnostic:"Conversion could not publish output."); } finally { try { if(File.Exists(temp)) File.Delete(temp); if(File.Exists(captions)) File.Delete(captions); } catch {} }
  }
+ private static async Task<bool> ExtractClosedCaptionsAsync(string source, string captions, CancellationToken token)
+ { var psi = new ProcessStartInfo { FileName = "ffmpeg", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+   foreach (var arg in new[] { "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", $"movie='{VideoConversionArgumentBuilder.EscapeFilterValue(source)}'[out+subcc]", "-map", "0:s:0", "-c:s", "srt", "-y", captions }) psi.ArgumentList.Add(arg);
+   using var process = Process.Start(psi); if (process is null) return false; await process.StandardOutput.ReadToEndAsync(token); await process.StandardError.ReadToEndAsync(token); await process.WaitForExitAsync(token); return process.ExitCode == 0 && new FileInfo(captions).Length > 0; }
  internal static bool MeetsMinimumSavings(long? sourceSizeBytes, long outputSizeBytes, int minimumSavingsPercent) =>
   sourceSizeBytes is > 0 && outputSizeBytes >= 0 && outputSizeBytes * 100m <= sourceSizeBytes.Value * (100 - minimumSavingsPercent);
  internal static VideoConversionProgress? ParseProgress(IReadOnlyDictionary<string,string> values) { if (values.TryGetValue("progress",out var state) && state == "end") return new(null,null,true); double? processed = values.TryGetValue("out_time_us",out var time) && long.TryParse(time,CultureInfo.InvariantCulture,out var microseconds) && microseconds >= 0 ? microseconds / 1_000_000d : null; double? speed = values.TryGetValue("speed",out var speedValue) && speedValue.EndsWith('x') && double.TryParse(speedValue[..^1],NumberStyles.Float,CultureInfo.InvariantCulture,out var parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : null; return processed is null && speed is null ? null : new(processed,speed); }

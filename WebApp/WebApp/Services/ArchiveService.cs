@@ -10,7 +10,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
     private static readonly HashSet<string> VideoExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v" };
     private static readonly HashSet<string> ConversionSourceExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv", ".rmvb", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".ts" };
+        new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv", ".rmvb", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".ts", ".vob" };
 
     private static readonly HashSet<string> MusicExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".m4a" };
