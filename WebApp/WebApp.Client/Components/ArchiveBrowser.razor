@@ -687,6 +687,45 @@
     <div class="modal-backdrop fade show"></div>
 }
 
+@if (_activeJob is { } job)
+{
+    var jobProgressPercent = JobProgressPercent(job);
+    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@JobProgressModalLabelId" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="@JobProgressModalLabelId">@JobActionLabel(job) @job.Label</h1>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="DismissActiveJob"></button>
+                </div>
+                <div class="modal-body">
+                    @if (job.State == ArchiveMutationJobState.Failed)
+                    {
+                        <div class="alert alert-danger mb-0" role="alert">@(job.Diagnostic ?? "The operation failed.")</div>
+                    }
+                    else
+                    {
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span>@JobStatusLine(job)</span>
+                            <strong>@jobProgressPercent%</strong>
+                        </div>
+                        <div class="progress" role="progressbar" aria-label="@JobActionLabel(job) progress for @job.Label" aria-valuenow="@jobProgressPercent" aria-valuemin="0" aria-valuemax="100" style="height: .65rem;">
+                            <div class="progress-bar progress-bar-striped @(job.State == ArchiveMutationJobState.Completed ? string.Empty : "progress-bar-animated")" style="width: @(jobProgressPercent)%; flex: 0 0 @(jobProgressPercent)%;"></div>
+                        </div>
+                        @if (job.State == ArchiveMutationJobState.Completed)
+                        {
+                            <p class="text-success mt-2 mb-0"><i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>Completed</p>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="DismissActiveJob">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
 @code {
     [Parameter, EditorRequired] public string Category { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
@@ -724,6 +763,8 @@
     private string? _imageViewerStartId;
     private string? _comicViewerItemId;
     private CancellationTokenSource? _mediaPollingCts;
+    private ArchiveMutationJobDto? _activeJob;
+    private CancellationTokenSource? _jobPollingCts;
     private bool _isLoading = true;
     private bool _operationPending;
     private string _filterText = string.Empty;
@@ -741,6 +782,7 @@
     private string CreateFileInputId => $"archive-{Category}-create-file";
     private string RenameModalLabelId => $"archive-{Category}-rename-modal-label";
     private string EmptyTrashModalLabelId => $"archive-{Category}-empty-trash-modal-label";
+    private string JobProgressModalLabelId => $"archive-{Category}-job-progress-modal-label";
     private string ConversionQueuedModalLabelId => $"archive-{Category}-conversion-queued-modal-label";
     private string ConversionPlanModalLabelId => $"archive-{Category}-conversion-plan-modal-label";
     private string ConversionModeId => $"archive-{Category}-conversion-mode";
@@ -1640,20 +1682,121 @@
         }
 
         var id = _moving.Id;
-        _ = await SendMutationAsync(() => Http.PatchAsJsonAsync(
+        await EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
             $"api/archive/{Category}/items/{Uri.EscapeDataString(id)}/location",
             new MoveArchiveItemRequest(destination.DestinationCategory, destination.DestinationFolderId)));
         CancelDialogs();
     }
 
     private async Task DeleteAsync(ArchiveItemDto item) =>
-        _ = await SendMutationAsync(() => Http.DeleteAsync($"api/archive/{Category}/items/{Uri.EscapeDataString(item.Id)}"));
+        await EnqueueMutationAsync(() => Http.DeleteAsync($"api/archive/{Category}/items/{Uri.EscapeDataString(item.Id)}"));
 
     private async Task EmptyTrashAsync()
     {
-        _ = await SendMutationAsync(() => Http.DeleteAsync($"api/archive/{Category}/items"));
+        await EnqueueMutationAsync(() => Http.DeleteAsync($"api/archive/{Category}/items"));
         CancelDialogs();
     }
+
+    private async Task EnqueueMutationAsync(Func<Task<HttpResponseMessage>> action)
+    {
+        _error = null;
+        try
+        {
+            using var response = await action();
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "That change conflicts with an existing item."
+                    : "The archive change could not be saved.";
+                return;
+            }
+
+            _activeJob = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
+            StartJobPolling();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "The archive change could not reach the server.";
+        }
+    }
+
+    private void StartJobPolling()
+    {
+        _jobPollingCts?.Cancel();
+        _jobPollingCts?.Dispose();
+        _jobPollingCts = new CancellationTokenSource();
+        _ = PollJobAsync(_jobPollingCts.Token);
+    }
+
+    private async Task PollJobAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (_activeJob is null)
+                {
+                    return;
+                }
+
+                List<ArchiveMutationJobDto>? jobs;
+                try
+                {
+                    jobs = await Http.GetFromJsonAsync<List<ArchiveMutationJobDto>>("api/archive/jobs", cancellationToken);
+                }
+                catch (HttpRequestException)
+                {
+                    continue;
+                }
+
+                var job = jobs?.FirstOrDefault(candidate => candidate.JobId == _activeJob.JobId);
+                if (job is null)
+                {
+                    return;
+                }
+
+                _activeJob = job;
+                await InvokeAsync(StateHasChanged);
+
+                if (job.State is ArchiveMutationJobState.Completed or ArchiveMutationJobState.Failed)
+                {
+                    await LoadAsync(_listing?.CurrentFolderId, restartPolling: false, showLoading: false);
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void DismissActiveJob()
+    {
+        _jobPollingCts?.Cancel();
+        _jobPollingCts?.Dispose();
+        _jobPollingCts = null;
+        _activeJob = null;
+    }
+
+    private static string JobActionLabel(ArchiveMutationJobDto job) => job.Kind switch
+    {
+        ArchiveMutationKind.MoveToTrash => "Moving to Trash:",
+        ArchiveMutationKind.EmptyTrash => "Emptying",
+        _ => "Moving"
+    };
+
+    private static string JobStatusLine(ArchiveMutationJobDto job) => job.State switch
+    {
+        ArchiveMutationJobState.Pending => "Queued…",
+        _ => $"{job.ProcessedItems} of {job.TotalItems} item{(job.TotalItems == 1 ? string.Empty : "s")}"
+    };
+
+    private static int JobProgressPercent(ArchiveMutationJobDto job) =>
+        job.TotalItems <= 0
+            ? (job.State == ArchiveMutationJobState.Completed ? 100 : 0)
+            : (int)Math.Round(Math.Min(100.0, job.ProcessedItems * 100.0 / job.TotalItems), MidpointRounding.AwayFromZero);
 
     private void StartPreview(ArchiveItemDto item)
     {
@@ -1890,6 +2033,8 @@
         PlayerState.StateChanged -= HandlePlayerStateChanged;
         _mediaPollingCts?.Cancel();
         _mediaPollingCts?.Dispose();
+        _jobPollingCts?.Cancel();
+        _jobPollingCts?.Dispose();
     }
 
     private void RestartMediaPollingIfNeeded()

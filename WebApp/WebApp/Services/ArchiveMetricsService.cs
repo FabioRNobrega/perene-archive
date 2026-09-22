@@ -12,6 +12,7 @@ internal sealed class ArchiveMetricsService(
     ISubtitleJobQueue subtitleJobQueue,
     ICutJobQueue cutJobQueue,
     ICompositionJobQueue compositionJobQueue,
+    IArchiveMutationJobQueue archiveMutationJobQueue,
     IVideoConversionJobQueue? conversionJobQueue = null) : IArchiveMetricsService
 {
     private static readonly string[] FfmpegProcessNames = ["ffmpeg", "ffprobe"];
@@ -39,7 +40,8 @@ internal sealed class ArchiveMetricsService(
             subtitleJobQueue.ActiveCount,
             cutJobQueue.ActiveCount,
             compositionJobQueue.ActiveCount,
-            conversionJobQueue?.ActiveCount ?? 0);
+            conversionJobQueue?.ActiveCount ?? 0,
+            archiveMutationJobQueue.ActiveCount);
     }
 
     private ArchiveFileCounts CountFiles()

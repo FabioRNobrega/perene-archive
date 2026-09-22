@@ -214,7 +214,7 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
-    public void Move_relocates_item_within_the_same_category()
+    public void Move_returns_a_pending_job_descriptor_without_touching_the_filesystem()
     {
         using var root = CreateArchive();
         awaitFile(Path.Combine(root.Path, "Documents", "note.txt"));
@@ -223,28 +223,34 @@ public sealed class ArchiveServiceTests
         var file = service.List("documents", null).Items.Single(item => item.Name == "note.txt");
         var target = service.List("documents", null).Items.Single(item => item.Name == "Target");
 
-        var listing = service.Move("documents", file.Id, "documents", target.Id);
+        var job = service.Move("documents", file.Id, "documents", target.Id);
 
-        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "Target", "note.txt")));
-        Assert.False(File.Exists(Path.Combine(root.Path, "Documents", "note.txt")));
-        Assert.Equal("documents", listing.Category.Key);
-        Assert.DoesNotContain(listing.Items, item => item.Name == "note.txt");
+        Assert.Equal(ArchiveMutationKind.Move, job.Kind);
+        Assert.Equal(1, job.TotalItems);
+        Assert.Equal("note.txt", job.Label);
+        Assert.False(job.IsFolder);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "note.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Documents", "Target", "note.txt")));
     }
 
     [Fact]
-    public void Move_relocates_item_across_categories()
+    public void Move_of_a_folder_counts_its_files_recursively_without_touching_the_filesystem()
     {
         using var root = CreateArchive();
-        awaitFile(Path.Combine(root.Path, "Downloads", "file.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Downloads", "Source", "Nested"));
+        awaitFile(Path.Combine(root.Path, "Downloads", "Source", "a.txt"));
+        awaitFile(Path.Combine(root.Path, "Downloads", "Source", "Nested", "b.txt"));
         Directory.CreateDirectory(Path.Combine(root.Path, "Videos", "Target"));
         var service = CreateService(root.Path);
-        var file = service.List("downloads", null).Items.Single(item => item.Name == "file.txt");
+        var folder = service.List("downloads", null).Items.Single(item => item.Name == "Source");
         var target = service.List("videos", null).Items.Single(item => item.Name == "Target");
 
-        service.Move("downloads", file.Id, "videos", target.Id);
+        var job = service.Move("downloads", folder.Id, "videos", target.Id);
 
-        Assert.True(File.Exists(Path.Combine(root.Path, "Videos", "Target", "file.txt")));
-        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "file.txt")));
+        Assert.Equal(ArchiveMutationKind.Move, job.Kind);
+        Assert.True(job.IsFolder);
+        Assert.Equal(2, job.TotalItems);
+        Assert.True(Directory.Exists(Path.Combine(root.Path, "Downloads", "Source")));
     }
 
     [Fact]
@@ -296,20 +302,21 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
-    public void Move_returns_source_listing_after_cross_category_move()
+    public void Move_of_the_same_location_returns_a_job_with_source_equal_to_destination()
     {
         using var root = CreateArchive();
         awaitFile(Path.Combine(root.Path, "Downloads", "file.txt"));
         var service = CreateService(root.Path);
         var file = service.List("downloads", null).Items.Single(item => item.Name == "file.txt");
 
-        var listing = service.Move("downloads", file.Id, "videos", null);
+        var job = service.Move("downloads", file.Id, "downloads", null);
 
-        Assert.Equal("downloads", listing.Category.Key);
+        Assert.Equal(Path.Combine(root.Path, "Downloads", "file.txt"), job.SourcePath);
+        Assert.Equal(job.SourcePath, job.DestinationPath);
     }
 
     [Fact]
-    public void MoveToTrash_moves_item_without_permanent_delete()
+    public void MoveToTrash_returns_a_pending_job_descriptor_without_touching_the_filesystem()
     {
         using var root = CreateArchive();
         var file = Path.Combine(root.Path, "Documents", "note.txt");
@@ -317,39 +324,35 @@ public sealed class ArchiveServiceTests
         var service = CreateService(root.Path);
         var item = service.List("documents", null).Items.Single();
 
-        service.MoveToTrash("documents", item.Id);
+        var job = service.MoveToTrash("documents", item.Id);
 
-        Assert.False(File.Exists(file));
-        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "note.txt")));
+        Assert.Equal(ArchiveMutationKind.MoveToTrash, job.Kind);
+        Assert.Equal(1, job.TotalItems);
+        Assert.Equal(file, job.SourcePath);
+        Assert.StartsWith(Path.Combine(root.Path, "Trash"), job.DestinationPath);
+        Assert.True(File.Exists(file));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Trash", "note.txt")));
     }
 
     [Fact]
-    public void EmptyTrash_deletes_all_files_in_trash_root()
+    public void EmptyTrash_returns_a_job_counting_files_recursively_without_touching_the_filesystem()
     {
         using var root = CreateArchive();
         awaitFile(Path.Combine(root.Path, "Trash", "one.txt"));
         awaitFile(Path.Combine(root.Path, "Trash", "two.txt"));
+        var nested = Path.Combine(root.Path, "Trash", "Nested");
+        Directory.CreateDirectory(nested);
+        awaitFile(Path.Combine(nested, "inner.txt"));
         var service = CreateService(root.Path);
 
-        var listing = service.EmptyTrash("trash");
+        var job = service.EmptyTrash("trash");
 
-        Assert.Empty(listing.Items);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(root.Path, "Trash")));
-    }
-
-    [Fact]
-    public void EmptyTrash_deletes_folders_recursively()
-    {
-        using var root = CreateArchive();
-        var folder = Path.Combine(root.Path, "Trash", "Nested");
-        Directory.CreateDirectory(folder);
-        awaitFile(Path.Combine(folder, "inner.txt"));
-        var service = CreateService(root.Path);
-
-        var listing = service.EmptyTrash("trash");
-
-        Assert.Empty(listing.Items);
-        Assert.False(Directory.Exists(folder));
+        Assert.Equal(ArchiveMutationKind.EmptyTrash, job.Kind);
+        Assert.Equal(3, job.TotalItems);
+        Assert.Null(job.DestinationPath);
+        Assert.Equal(Path.Combine(root.Path, "Trash"), job.SourcePath);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "one.txt")));
+        Assert.True(Directory.Exists(nested));
     }
 
     [Fact]
@@ -364,14 +367,14 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
-    public void EmptyTrash_with_empty_trash_returns_empty_listing_without_error()
+    public void EmptyTrash_with_empty_trash_returns_a_job_with_zero_total_items()
     {
         using var root = CreateArchive();
         var service = CreateService(root.Path);
 
-        var listing = service.EmptyTrash("trash");
+        var job = service.EmptyTrash("trash");
 
-        Assert.Empty(listing.Items);
+        Assert.Equal(0, job.TotalItems);
     }
 
     [Fact]

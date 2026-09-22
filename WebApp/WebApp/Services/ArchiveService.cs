@@ -177,7 +177,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return BuildListing(category, GetParentEntry(category, destination));
     }
 
-    public ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId)
+    public ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId)
     {
         var category = ResolveCategory(categoryKey);
         var item = ResolveItem(category, itemId);
@@ -187,7 +187,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         var destination = ContainedPath(destinationCategory, Path.Combine(destinationFolder.PhysicalPath, item.Name));
         if (IsSamePath(item.PhysicalPath, destination))
         {
-            return BuildListing(category, GetParentEntry(category, item.PhysicalPath));
+            return CreateMutationJob(ArchiveMutationKind.Move, item, destination);
         }
 
         if (Exists(destination))
@@ -200,11 +200,10 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             throw new ArchiveValidationException("A folder cannot be moved into itself.");
         }
 
-        MovePhysical(item, destination);
-        return BuildListing(category, GetParentEntry(category, item.PhysicalPath));
+        return CreateMutationJob(ArchiveMutationKind.Move, item, destination);
     }
 
-    public ArchiveListing MoveToTrash(string categoryKey, string itemId)
+    public ArchiveMutationJob MoveToTrash(string categoryKey, string itemId)
     {
         var category = ResolveCategory(categoryKey);
         if (string.Equals(category.Key, "trash", StringComparison.OrdinalIgnoreCase))
@@ -217,11 +216,10 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         var trash = ResolveCategory("trash");
         var trashRoot = GetCategoryRoot(trash);
         var destination = GetUniqueTrashPath(trashRoot, item.Name);
-        MovePhysical(item, destination);
-        return BuildListing(category, GetParentEntry(category, item.PhysicalPath));
+        return CreateMutationJob(ArchiveMutationKind.MoveToTrash, item, destination);
     }
 
-    public ArchiveListing EmptyTrash(string categoryKey)
+    public ArchiveMutationJob EmptyTrash(string categoryKey)
     {
         var category = ResolveCategory(categoryKey);
         if (!string.Equals(category.Key, "trash", StringComparison.OrdinalIgnoreCase))
@@ -230,28 +228,14 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
 
         var trashRoot = GetCategoryRoot(category);
-        var entries = Directory.EnumerateFileSystemEntries(trashRoot).ToArray();
-        try
-        {
-            foreach (var path in entries)
-            {
-                var attributes = File.GetAttributes(path);
-                if ((attributes & FileAttributes.Directory) != 0)
-                {
-                    Directory.Delete(path, recursive: true);
-                }
-                else
-                {
-                    File.Delete(path);
-                }
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            throw new ArchiveConflictException("Trash could not be fully emptied. No items were removed.");
-        }
-
-        return BuildListing(category, CreateEntry(category, trashRoot));
+        return new ArchiveMutationJob(
+            Guid.NewGuid().ToString("N"),
+            ArchiveMutationKind.EmptyTrash,
+            trashRoot,
+            DestinationPath: null,
+            IsFolder: true,
+            TotalItems: CountFiles(trashRoot),
+            Label: "Trash");
     }
 
     public bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item)
@@ -950,6 +934,36 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         else
         {
             File.Move(item.PhysicalPath, destination);
+        }
+    }
+
+    private static ArchiveMutationJob CreateMutationJob(ArchiveMutationKind kind, ArchiveItemEntry item, string destination)
+    {
+        var isFolder = item.Kind == ArchiveItemKind.Folder;
+        return new ArchiveMutationJob(
+            Guid.NewGuid().ToString("N"),
+            kind,
+            item.PhysicalPath,
+            destination,
+            isFolder,
+            isFolder ? CountFiles(item.PhysicalPath) : 1,
+            item.Name);
+    }
+
+    private static int CountFiles(string path)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(path, "*", new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+                IgnoreInaccessible = true,
+            }).Count();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            return 0;
         }
     }
 

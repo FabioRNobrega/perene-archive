@@ -31,7 +31,8 @@ public sealed class ArchiveMetricsServiceTests
             new FakeHoverPreviewJobQueue(1),
             new FakeSubtitleJobQueue(0),
             new FakeCutJobQueue(4),
-            new FakeCompositionJobQueue(1));
+            new FakeCompositionJobQueue(1),
+            new FakeArchiveMutationJobQueue(5));
 
         var metrics = service.GetArchiveMetrics();
 
@@ -43,6 +44,7 @@ public sealed class ArchiveMetricsServiceTests
         Assert.Equal(0, metrics.QueuedSubtitleJobs);
         Assert.Equal(4, metrics.QueuedCutJobs);
         Assert.Equal(1, metrics.QueuedCompositionJobs);
+        Assert.Equal(5, metrics.QueuedArchiveMutationJobs);
         var categoryCount = ArchiveCategory.Defaults.Count;
         Assert.Equal(2 * categoryCount, metrics.VideoFiles);
         Assert.Equal(categoryCount, metrics.AudioFiles);
@@ -87,9 +89,9 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName) => throw new NotSupportedException();
         public ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath) => throw new NotSupportedException();
         public ArchiveListing Rename(string categoryKey, string itemId, string name) => throw new NotSupportedException();
-        public ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
-        public ArchiveListing MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
-        public ArchiveListing EmptyTrash(string categoryKey) => throw new NotSupportedException();
+        public ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
+        public ArchiveMutationJob MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
+        public ArchiveMutationJob EmptyTrash(string categoryKey) => throw new NotSupportedException();
         public bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveMusic(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
@@ -166,6 +168,17 @@ public sealed class ArchiveMetricsServiceTests
     {
         public bool TryEnqueue(CompositionJob job) => true;
         public Task<CompositionJob> DequeueAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public void Complete()
+        {
+        }
+
+        public int ActiveCount => activeCount;
+    }
+
+    private sealed class FakeArchiveMutationJobQueue(int activeCount) : IArchiveMutationJobQueue
+    {
+        public bool TryEnqueue(ArchiveMutationJob job) => true;
+        public Task<ArchiveMutationJob> DequeueAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public void Complete()
         {
         }

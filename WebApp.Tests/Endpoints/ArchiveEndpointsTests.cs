@@ -494,7 +494,7 @@ public sealed class ArchiveEndpointsTests
     }
 
     [Fact]
-    public async Task Delete_moves_item_to_trash()
+    public async Task Delete_enqueues_a_move_to_trash_job_that_eventually_completes()
     {
         using var root = CreateArchive();
         await File.WriteAllTextAsync(Path.Combine(root.Path, "Documents", "note.txt"), "content");
@@ -504,9 +504,38 @@ public sealed class ArchiveEndpointsTests
         var item = Assert.Single(listing.Items);
 
         using var response = await client.DeleteAsync($"/api/archive/documents/items/{item.Id}");
+        var job = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(ArchiveMutationKind.MoveToTrash, job!.Kind);
+        Assert.Equal(1, job.TotalItems);
+
+        var completed = await PollUntilTerminalAsync(client, job.JobId);
+        Assert.Equal(ArchiveMutationJobState.Completed, completed.State);
         Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "note.txt")));
+    }
+
+    [Fact]
+    public async Task Move_endpoint_enqueues_a_job_that_relocates_the_item_across_categories()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "file.txt"), "content");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+        var item = Assert.Single(listing.Items);
+
+        using var response = await client.PatchAsJsonAsync(
+            $"/api/archive/downloads/items/{item.Id}/location", new MoveArchiveItemRequest("videos", null));
+        var job = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(ArchiveMutationJobState.Pending, job!.State);
+
+        var completed = await PollUntilTerminalAsync(client, job.JobId);
+        Assert.Equal(ArchiveMutationJobState.Completed, completed.State);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Videos", "file.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "file.txt")));
     }
 
     [Fact]
@@ -518,10 +547,13 @@ public sealed class ArchiveEndpointsTests
         using var client = factory.CreateClient();
 
         using var response = await client.DeleteAsync("/api/archive/trash/items");
-        var listing = await response.Content.ReadFromJsonAsync<ArchiveListingDto>();
+        var job = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Empty(listing!.Items);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(1, job!.TotalItems);
+
+        var completed = await PollUntilTerminalAsync(client, job.JobId);
+        Assert.Equal(ArchiveMutationJobState.Completed, completed.State);
         Assert.False(File.Exists(Path.Combine(root.Path, "Trash", "note.txt")));
     }
 
@@ -537,6 +569,24 @@ public sealed class ArchiveEndpointsTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "note.txt")));
+    }
+
+    private static async Task<ArchiveMutationJobDto> PollUntilTerminalAsync(HttpClient client, string jobId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var jobs = await client.GetFromJsonAsync<List<ArchiveMutationJobDto>>("/api/archive/jobs");
+            var job = jobs!.SingleOrDefault(candidate => candidate.JobId == jobId);
+            if (job is { State: ArchiveMutationJobState.Completed or ArchiveMutationJobState.Failed })
+            {
+                return job;
+            }
+
+            await Task.Delay(25);
+        }
+
+        throw new TimeoutException($"Archive mutation job {jobId} did not reach a terminal state in time.");
     }
 
     [Fact]

@@ -53,6 +53,7 @@ internal static class ArchiveEndpoints
         endpoints.MapPatch("/api/archive/{category}/items/{id}/location", Move);
         endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash);
         endpoints.MapDelete("/api/archive/{category}/items", EmptyTrash);
+        endpoints.MapGet("/api/archive/jobs", GetJobs);
         return endpoints;
     }
 
@@ -328,62 +329,73 @@ internal static class ArchiveEndpoints
             epubBookService,
             cancellationToken));
 
-    private static async Task<IResult> Move(
+    private static IResult Move(
         string category,
         string id,
         MoveArchiveItemRequest request,
         IArchiveService archive,
-        ThumbnailCoordinator thumbnailCoordinator,
-        HoverPreviewCoordinator hoverPreviewCoordinator,
-        SubtitleCoordinator subtitleCoordinator,
-        VideoMetadataCoordinator metadataCoordinator,
-        IEpubBookService epubBookService,
-        CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId),
-            thumbnailCoordinator,
-            hoverPreviewCoordinator,
-            subtitleCoordinator,
-            metadataCoordinator,
-            epubBookService,
-            cancellationToken));
+        IArchiveMutationJobQueue queue,
+        IArchiveMutationJobStatusStore statuses) =>
+        EnqueueMutation(() => archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId), queue, statuses);
 
-    private static async Task<IResult> MoveToTrash(
+    private static IResult MoveToTrash(
         string category,
         string id,
         IArchiveService archive,
-        ThumbnailCoordinator thumbnailCoordinator,
-        HoverPreviewCoordinator hoverPreviewCoordinator,
-        SubtitleCoordinator subtitleCoordinator,
-        VideoMetadataCoordinator metadataCoordinator,
-        IEpubBookService epubBookService,
-        CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.MoveToTrash(category, id),
-            thumbnailCoordinator,
-            hoverPreviewCoordinator,
-            subtitleCoordinator,
-            metadataCoordinator,
-            epubBookService,
-            cancellationToken));
+        IArchiveMutationJobQueue queue,
+        IArchiveMutationJobStatusStore statuses) =>
+        EnqueueMutation(() => archive.MoveToTrash(category, id), queue, statuses);
 
-    private static async Task<IResult> EmptyTrash(
+    private static IResult EmptyTrash(
         string category,
         IArchiveService archive,
-        ThumbnailCoordinator thumbnailCoordinator,
-        HoverPreviewCoordinator hoverPreviewCoordinator,
-        SubtitleCoordinator subtitleCoordinator,
-        VideoMetadataCoordinator metadataCoordinator,
-        IEpubBookService epubBookService,
-        CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.EmptyTrash(category),
-            thumbnailCoordinator,
-            hoverPreviewCoordinator,
-            subtitleCoordinator,
-            metadataCoordinator,
-            epubBookService,
-            cancellationToken));
+        IArchiveMutationJobQueue queue,
+        IArchiveMutationJobStatusStore statuses) =>
+        EnqueueMutation(() => archive.EmptyTrash(category), queue, statuses);
+
+    private static IResult GetJobs(IArchiveMutationJobStatusStore statuses) =>
+        Results.Ok(statuses.GetAll().Select(ToMutationDto).ToList());
+
+    private static IResult EnqueueMutation(
+        Func<ArchiveMutationJob> action,
+        IArchiveMutationJobQueue queue,
+        IArchiveMutationJobStatusStore statuses)
+    {
+        try
+        {
+            var job = action();
+            statuses.Seed(job);
+            if (!queue.TryEnqueue(job))
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+
+            return Results.Accepted($"/api/archive/jobs/{job.JobId}", ToMutationDto(statuses.Get(job.JobId)!));
+        }
+        catch (ArchiveValidationException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (ArchiveForbiddenException exception)
+        {
+            return Results.Problem(title: "Archive operation is not allowed.", detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (ArchiveConflictException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Results.Problem(title: "Archive operation failed.", detail: "The archive item could not be changed.", statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static ArchiveMutationJobDto ToMutationDto(ArchiveMutationJobStatus status) =>
+        new(status.JobId, status.Kind, status.State, status.Label, status.TotalItems, status.ProcessedItems, status.Diagnostic);
 
     private static async Task<IResult> CreateCropAsync(
         string category,

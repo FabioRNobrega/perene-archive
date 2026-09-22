@@ -28,11 +28,16 @@ internal interface IArchiveService
 
     ArchiveListing Rename(string categoryKey, string itemId, string name);
 
-    ArchiveListing Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId);
+    /// <summary>
+    /// Validates the move exactly as before (category/item/folder resolution, name-conflict and
+    /// self-move checks) but does not touch the filesystem; it returns a job descriptor for the caller
+    /// to seed into <c>IArchiveMutationJobStatusStore</c> and enqueue onto <c>IArchiveMutationJobQueue</c>.
+    /// </summary>
+    ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId);
 
-    ArchiveListing MoveToTrash(string categoryKey, string itemId);
+    ArchiveMutationJob MoveToTrash(string categoryKey, string itemId);
 
-    ArchiveListing EmptyTrash(string categoryKey);
+    ArchiveMutationJob EmptyTrash(string categoryKey);
 
     bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item);
 

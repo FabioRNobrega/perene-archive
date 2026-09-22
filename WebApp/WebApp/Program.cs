@@ -149,6 +149,10 @@ builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGe
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
+builder.Services.AddSingleton<IArchiveMutationJobQueue, ArchiveMutationJobQueue>();
+builder.Services.AddSingleton<IArchiveMutationJobStatusStore, ArchiveMutationJobStatusStore>();
+builder.Services.AddSingleton<IArchiveMutationExecutor, ArchiveMutationExecutor>();
+builder.Services.AddHostedService<ArchiveMutationBackgroundWorker>();
 builder.Services.AddSingleton<IComicBookService, ComicBookService>();
 builder.Services.AddSingleton<IArchiveDownloadService, ArchiveDownloadService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
