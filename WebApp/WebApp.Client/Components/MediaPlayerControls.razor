@@ -429,7 +429,16 @@
         if (!IsFillTabActive && FillTabFocusRequest != _observedFillTabFocusRequest)
         {
             _observedFillTabFocusRequest = FillTabFocusRequest;
-            await _fillTabButton.FocusAsync();
+            try
+            {
+                // Stop can remove the player between this render being scheduled and the focus call.
+                // In that case the ElementReference no longer represents a DOM element.
+                await _fillTabButton.FocusAsync();
+            }
+            catch (JSException)
+            {
+                // Focus restoration is optional; never let a removed control end the Blazor app.
+            }
         }
     }
 
