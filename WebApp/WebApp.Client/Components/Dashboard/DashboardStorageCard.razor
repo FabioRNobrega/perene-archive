@@ -1,8 +1,9 @@
 @inject HttpClient Http
-@implements IDisposable
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 @using WebApp.Client.Models
 
-<div class="card h-100">
+<div class="card h-100" @ref="_root">
     <div class="card-body">
         <h2 class="h6 card-title d-flex align-items-center gap-2">
             <i class="bi bi-hdd" aria-hidden="true"></i>Storage
@@ -18,8 +19,19 @@
         else
         {
             <div class="mb-2">
-                <div class="d-flex justify-content-between small mb-1">
-                    <span>Capacity</span>
+                <div class="d-flex justify-content-between align-items-center small mb-1">
+                    <span class="d-flex align-items-center gap-1">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-1 lh-1"
+                                title="Add custom storage view"
+                                aria-label="Add custom storage view"
+                                data-bs-toggle="tooltip"
+                                data-bs-title="Add custom storage view"
+                                @onclick="() => _showPicker = true">
+                            <i class="bi bi-plus-lg small" aria-hidden="true"></i>
+                        </button>
+                        Capacity
+                    </span>
                     <span class="@ThresholdColor.TextClass(UsedPercent)">@DashboardFormat.Bytes(_metrics.UsedBytes) of @DashboardFormat.Bytes(_metrics.TotalBytes)</span>
                 </div>
                 <div class="progress" role="progressbar" aria-label="Storage used"
@@ -27,6 +39,75 @@
                     <div class="progress-bar @ThresholdColor.ProgressBarClass(UsedPercent)" style="width: @DashboardFormat.CssPercent(UsedPercent)%;"></div>
                 </div>
             </div>
+
+            @foreach (var view in _customViews)
+            {
+                var percent = CustomViewPercent(view);
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-center small mb-1 gap-2 @(_editingViewId == view.Id ? "py-2" : null)">
+                        <span class="text-truncate">@view.Title</span>
+                        <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                            @if (_editingViewId == view.Id)
+                            {
+                                <input type="number" min="0.1" step="0.1" class="form-control form-control-sm" style="width: 5.5rem;"
+                                       aria-label="@($"Max size in gigabytes for {view.Title}")"
+                                       @bind="_editingMaxGb" />
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-1 lh-1"
+                                        title="Save"
+                                        aria-label="@($"Save max size for {view.Title}")"
+                                        data-bs-toggle="tooltip"
+                                        data-bs-title="Save"
+                                        @onclick="() => SaveEditAsync(view.Id)">
+                                    <i class="bi bi-check-lg small" aria-hidden="true"></i>
+                                </button>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-1 lh-1"
+                                        title="Cancel"
+                                        aria-label="@($"Cancel editing max size for {view.Title}")"
+                                        data-bs-toggle="tooltip"
+                                        data-bs-title="Cancel"
+                                        @onclick="CancelEdit">
+                                    <i class="bi bi-x-lg small" aria-hidden="true"></i>
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-nowrap @(view.IsAvailable ? ThresholdColor.TextClass(percent) : "text-body-secondary")">
+                                    @(view.IsAvailable ? $"{DashboardFormat.Bytes(view.UsedBytes)} of {DashboardFormat.Bytes(view.MaxBytes)}" : "Unavailable")
+                                </span>
+                                <div class="dropdown">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-1 lh-1"
+                                            title="Actions"
+                                            aria-label="@($"Actions for {view.Title}")"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                        <i class="bi bi-three-dots-vertical small" aria-hidden="true"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <button class="dropdown-item d-flex align-items-center gap-2" type="button" @onclick="() => StartEdit(view)">
+                                                <i class="bi bi-pencil" aria-hidden="true"></i>Edit max size
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button class="dropdown-item d-flex align-items-center gap-2 text-danger" type="button" @onclick="() => StartRemove(view)">
+                                                <i class="bi bi-x-circle" aria-hidden="true"></i>Remove
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="progress" role="progressbar" aria-label="@($"{view.Title} storage used")"
+                         aria-valuenow="@DashboardFormat.CssPercent(percent)" aria-valuemin="0" aria-valuemax="100" style="height: 6px;">
+                        <div class="progress-bar @(view.IsAvailable ? ThresholdColor.ProgressBarClass(percent) : "text-bg-secondary")" style="width: @CustomViewWidthPercent(view)%;"></div>
+                    </div>
+                </div>
+            }
+
             <dl class="row small mb-0">
                 <dt class="col-7">Read throughput</dt>
                 <dd class="col-5 text-end">@DashboardFormat.BytesPerSecond(_metrics.ReadBytesPerSecond)</dd>
@@ -39,15 +120,90 @@
     </div>
 </div>
 
+@if (_showPicker)
+{
+    <CustomStorageFolderPicker OnCancel="() => _showPicker = false" OnConfirmed="OnCustomViewsConfirmed" />
+}
+
+@if (_removingView is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@RemoveViewModalLabelId" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="@RemoveViewModalLabelId">Remove @_removingView.Title</h1>
+                    <button type="button" class="btn-close" aria-label="Close" disabled="@_removePending" @onclick="CancelRemove"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">This stops tracking "@_removingView.Title" on the Storage card. It does not delete any files.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" disabled="@_removePending" @onclick="CancelRemove">Cancel</button>
+                    <button class="btn btn-danger" type="button" disabled="@_removePending" @onclick="ConfirmRemoveAsync">Remove</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
 @code {
+    private ElementReference _root;
+    private IJSObjectReference? _tooltipModule;
     private DashboardStorageDto? _metrics;
+    private List<CustomStorageViewDto> _customViews = [];
     private bool _isLoading = true;
+    private bool _showPicker;
+    private string? _editingViewId;
+    private double _editingMaxGb;
+    private CustomStorageViewDto? _removingView;
+    private bool _removePending;
     private CancellationTokenSource? _cts;
+
+    private string RemoveViewModalLabelId => "custom-storage-remove-view-label";
 
     private double? UsedPercent =>
         _metrics is { TotalBytes: > 0 } ? _metrics.UsedBytes * 100.0 / _metrics.TotalBytes : null;
 
+    private static double? CustomViewPercent(CustomStorageViewDto view) =>
+        view.IsAvailable && view.MaxBytes > 0 ? view.UsedBytes * 100.0 / view.MaxBytes : null;
+
+    // A folder using a small but non-zero share of its max rounds to "0" and would otherwise render as an
+    // invisible bar; keep a minimum sliver so any real usage stays visible.
+    private static string CustomViewWidthPercent(CustomStorageViewDto view)
+    {
+        var width = DashboardFormat.CssPercent(CustomViewPercent(view));
+        return view.IsAvailable && view.UsedBytes > 0 && width == "0" ? "1" : width;
+    }
+
     protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _tooltipModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/bootstrapInterop.js");
+            }
+            catch (JSException)
+            {
+                // Native title attributes remain available when enhanced tooltips cannot start.
+            }
+        }
+
+        if (_tooltipModule is not null)
+        {
+            try
+            {
+                await _tooltipModule.InvokeVoidAsync("refreshTooltips", _root);
+            }
+            catch (JSException)
+            {
+                // Controls stay fully operable without tooltip enhancement.
+            }
+        }
+    }
 
     public async Task RefreshAsync()
     {
@@ -59,6 +215,7 @@
         try
         {
             _metrics = await Http.GetFromJsonAsync<DashboardStorageDto>("api/dashboard/storage", _cts.Token);
+            _customViews = await Http.GetFromJsonAsync<List<CustomStorageViewDto>>("api/dashboard/storage/custom", _cts.Token) ?? [];
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
@@ -71,9 +228,107 @@
         }
     }
 
-    public void Dispose()
+    private void OnCustomViewsConfirmed(IReadOnlyList<CustomStorageViewDto> views)
+    {
+        _customViews = views.ToList();
+        _showPicker = false;
+    }
+
+    private void StartEdit(CustomStorageViewDto view)
+    {
+        _editingViewId = view.Id;
+        _editingMaxGb = Math.Round(view.MaxBytes / (1024.0 * 1024 * 1024), 2);
+    }
+
+    private async Task CancelEdit()
+    {
+        await DisposeTooltipsAsync();
+        _editingViewId = null;
+    }
+
+    private async Task SaveEditAsync(string viewId)
+    {
+        if (_editingMaxGb <= 0)
+        {
+            return;
+        }
+
+        var maxSizeBytes = (long)(_editingMaxGb * 1024 * 1024 * 1024);
+        try
+        {
+            var response = await Http.PatchAsJsonAsync($"api/dashboard/storage/custom/{Uri.EscapeDataString(viewId)}", new UpdateCustomStorageViewMaxSizeRequest(maxSizeBytes));
+            if (response.IsSuccessStatusCode)
+            {
+                _customViews = await response.Content.ReadFromJsonAsync<List<CustomStorageViewDto>>() ?? _customViews;
+            }
+        }
+        catch (HttpRequestException)
+        {
+        }
+        finally
+        {
+            // The Save/Cancel buttons carry a JS-managed tooltip; Blazor removes them from the DOM
+            // when leaving edit mode without disposing that tooltip, leaving its popup orphaned on screen.
+            await DisposeTooltipsAsync();
+            _editingViewId = null;
+        }
+    }
+
+    private async Task DisposeTooltipsAsync()
+    {
+        if (_tooltipModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _tooltipModule.InvokeVoidAsync("disposeTooltips", _root);
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private void StartRemove(CustomStorageViewDto view) => _removingView = view;
+
+    private void CancelRemove() => _removingView = null;
+
+    private async Task ConfirmRemoveAsync()
+    {
+        if (_removingView is null)
+        {
+            return;
+        }
+
+        _removePending = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/dashboard/storage/custom/{Uri.EscapeDataString(_removingView.Id)}");
+            if (response.IsSuccessStatusCode)
+            {
+                _customViews = await response.Content.ReadFromJsonAsync<List<CustomStorageViewDto>>() ?? _customViews;
+            }
+        }
+        catch (HttpRequestException)
+        {
+        }
+        finally
+        {
+            _removePending = false;
+            _removingView = null;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
         _cts?.Dispose();
+
+        if (_tooltipModule is not null)
+        {
+            await DisposeTooltipsAsync();
+            await _tooltipModule.DisposeAsync();
+        }
     }
 }

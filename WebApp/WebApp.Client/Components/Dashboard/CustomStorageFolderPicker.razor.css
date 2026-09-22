@@ -1,0 +1,11 @@
+/* Bootstrap has no utility for hiding a scrollbar while keeping the element scrollable;
+   this narrow pseudo-element/vendor-property behavior is the documented exception in AGENTS.md. */
+.custom-storage-picker-columns,
+.custom-storage-picker-column {
+    scrollbar-width: none;
+}
+
+.custom-storage-picker-columns::-webkit-scrollbar,
+.custom-storage-picker-column::-webkit-scrollbar {
+    display: none;
+}

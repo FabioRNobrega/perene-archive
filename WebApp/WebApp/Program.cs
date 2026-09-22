@@ -153,6 +153,7 @@ builder.Services.AddSingleton<IComicBookService, ComicBookService>();
 builder.Services.AddSingleton<IArchiveDownloadService, ArchiveDownloadService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
 builder.Services.AddHostedService<ArchiveUploadCleanupWorker>();
+builder.Services.AddSingleton<ICustomStorageViewService, CustomStorageViewService>();
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
 builder.Services.AddSingleton<INetworkMetricsService, NetworkMetricsService>();
 builder.Services.AddSingleton<IActiveClientTracker, ActiveClientTracker>();

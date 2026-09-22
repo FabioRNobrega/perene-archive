@@ -10,6 +10,10 @@ internal static class DashboardEndpoints
         endpoints.MapGet("/api/dashboard/system", GetSystem);
         endpoints.MapGet("/api/dashboard/memory", GetMemory);
         endpoints.MapGet("/api/dashboard/storage", GetStorage);
+        endpoints.MapGet("/api/dashboard/storage/custom", GetCustomStorageViews);
+        endpoints.MapPost("/api/dashboard/storage/custom", AddCustomStorageView);
+        endpoints.MapDelete("/api/dashboard/storage/custom/{viewId}", RemoveCustomStorageView);
+        endpoints.MapPatch("/api/dashboard/storage/custom/{viewId}", UpdateCustomStorageView);
         endpoints.MapGet("/api/dashboard/network", GetNetwork);
         endpoints.MapGet("/api/dashboard/archive", GetArchive);
         endpoints.MapGet("/api/dashboard/docker", GetDockerAsync);
@@ -43,6 +47,61 @@ internal static class DashboardEndpoints
             throughput.ReadBytesPerSecond,
             throughput.WriteBytesPerSecond,
             health));
+    }
+
+    private static async Task<IResult> GetCustomStorageViews(ICustomStorageViewService customStorageViews, CancellationToken cancellationToken) =>
+        Results.Ok(await customStorageViews.GetAllAsync(cancellationToken));
+
+    private static async Task<IResult> AddCustomStorageView(
+        AddCustomStorageViewRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+    {
+        if (request.MaxSizeBytes <= 0)
+        {
+            return Results.BadRequest(new { error = "A positive max size is required." });
+        }
+
+        if (!request.IsWholeArchive && string.IsNullOrWhiteSpace(request.CategoryKey))
+        {
+            return Results.BadRequest(new { error = "A category is required." });
+        }
+
+        try
+        {
+            var views = await customStorageViews.AddAsync(
+                request.CategoryKey, request.FolderId, request.IsWholeArchive, request.MaxSizeBytes, cancellationToken);
+            return Results.Ok(views);
+        }
+        catch (ArchiveValidationException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (ArchiveForbiddenException exception)
+        {
+            return Results.Problem(title: "This folder cannot be tracked.", detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+    }
+
+    private static async Task<IResult> RemoveCustomStorageView(
+        string viewId, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+    {
+        var views = await customStorageViews.RemoveAsync(viewId, cancellationToken);
+        return views is null ? Results.NotFound() : Results.Ok(views);
+    }
+
+    private static async Task<IResult> UpdateCustomStorageView(
+        string viewId, UpdateCustomStorageViewMaxSizeRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+    {
+        if (request.MaxSizeBytes <= 0)
+        {
+            return Results.BadRequest(new { error = "A positive max size is required." });
+        }
+
+        var views = await customStorageViews.UpdateMaxSizeAsync(viewId, request.MaxSizeBytes, cancellationToken);
+        return views is null ? Results.NotFound() : Results.Ok(views);
     }
 
     private static IResult GetNetwork(INetworkMetricsService networkMetricsService) =>

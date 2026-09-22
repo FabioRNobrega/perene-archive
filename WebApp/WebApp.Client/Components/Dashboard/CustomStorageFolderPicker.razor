@@ -1,0 +1,245 @@
+@using WebApp.Client.Models
+@inject HttpClient Http
+
+<div class="modal fade show d-block" tabindex="-1" aria-labelledby="@ModalLabelId" aria-modal="true" role="dialog">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="@ModalLabelId">Add custom storage view</h1>
+                <button type="button" class="btn-close" aria-label="Close" disabled="@_operationPending" @onclick="Cancel"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex overflow-x-auto overflow-y-hidden custom-storage-picker-columns" style="height: 24rem;">
+                    <div class="list-group flex-shrink-0 overflow-y-auto h-100 custom-storage-picker-column border-end rounded-0" style="width: 220px;">
+                        <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(_isWholeArchive ? "text-primary fw-semibold" : null)"
+                                type="button"
+                                disabled="@_operationPending"
+                                @onclick="SelectWholeArchive">
+                            <i class="bi bi-hdd-stack" aria-hidden="true"></i>
+                            Whole Archive
+                        </button>
+                        @foreach (var category in Categories)
+                        {
+                            <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(!_isWholeArchive && category.Key == _selectedCategoryKey ? "text-primary fw-semibold" : null)"
+                                    type="button"
+                                    disabled="@_operationPending"
+                                    @onclick="() => SelectCategoryAsync(category.Key)">
+                                <i class="bi @category.Icon" aria-hidden="true"></i>
+                                @category.DisplayName
+                            </button>
+                        }
+                    </div>
+                    @for (var columnIndex = 0; columnIndex < _folderColumns.Count; columnIndex++)
+                    {
+                        var capturedColumnIndex = columnIndex;
+                        var column = _folderColumns[columnIndex];
+                        var selectedChildId = columnIndex + 1 < _folderColumns.Count ? _folderColumns[columnIndex + 1].FolderId : null;
+                        <div class="list-group flex-shrink-0 overflow-y-auto h-100 custom-storage-picker-column border-end rounded-0" style="width: 220px;">
+                            @if (column.IsLoading)
+                            {
+                                <div class="list-group-item d-flex align-items-center justify-content-center py-4">
+                                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                                </div>
+                            }
+                            else if (column.Error is not null)
+                            {
+                                <div class="list-group-item text-danger small">@column.Error</div>
+                            }
+                            else if (column.Items.Count == 0)
+                            {
+                                <div class="list-group-item text-body-secondary small">No folders here.</div>
+                            }
+                            else
+                            {
+                                @foreach (var folder in column.Items)
+                                {
+                                    <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(folder.Id == selectedChildId ? "text-primary fw-semibold" : null)"
+                                            type="button"
+                                            disabled="@_operationPending"
+                                            @onclick="() => SelectFolderAsync(capturedColumnIndex, folder)">
+                                        <i class="bi bi-folder-fill" aria-hidden="true"></i>
+                                        <span class="text-truncate">@folder.Name</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="mt-3">
+                    <label for="@MaxSizeInputId" class="form-label small">Max size (GB)</label>
+                    <input id="@MaxSizeInputId" type="number" min="0.1" step="0.1" class="form-control @(_showValidation && !IsMaxSizeValid ? "is-invalid" : null)"
+                           style="max-width: 12rem;"
+                           disabled="@_operationPending"
+                           @bind="_maxSizeGb" />
+                    @if (_showValidation && !IsMaxSizeValid)
+                    {
+                        <div class="invalid-feedback d-block">Enter a max size greater than zero.</div>
+                    }
+                    @if (_showValidation && !IsFolderSelected)
+                    {
+                        <div class="text-danger small mt-1">Select a folder or the whole archive.</div>
+                    }
+                    @if (_error is not null)
+                    {
+                        <div class="text-danger small mt-1" role="alert">@_error</div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" disabled="@_operationPending" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" type="button" disabled="@_operationPending" @onclick="ConfirmAsync">
+                    @if (_operationPending)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                    }
+                    Add
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop fade show"></div>
+
+@code {
+    private sealed record CategoryOption(string Key, string DisplayName, string Icon);
+
+    private sealed class FolderColumn
+    {
+        public required string CategoryKey { get; init; }
+        public required string? FolderId { get; init; }
+        public List<ArchiveItemDto> Items { get; set; } = [];
+        public bool IsLoading { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private static readonly IReadOnlyList<CategoryOption> Categories =
+    [
+        new("videos", "Videos", "bi-collection-play"),
+        new("photos", "Photos", "bi-image"),
+        new("music", "Music", "bi-music-note-beamed"),
+        new("documents", "Documents", "bi-file-earmark-text"),
+        new("books", "Books", "bi-journal-bookmark-fill"),
+        new("downloads", "Downloads", "bi-download"),
+        new("shared", "Shared", "bi-people"),
+        new("family", "Family", "bi-house-heart"),
+    ];
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<CustomStorageViewDto>> OnConfirmed { get; set; }
+
+    private bool _isWholeArchive;
+    private string? _selectedCategoryKey;
+    private readonly List<FolderColumn> _folderColumns = [];
+    private double _maxSizeGb = 50;
+    private bool _showValidation;
+    private bool _operationPending;
+    private string? _error;
+
+    private string ModalLabelId => "custom-storage-picker-label";
+    private string MaxSizeInputId => "custom-storage-picker-max-size";
+    private bool IsMaxSizeValid => _maxSizeGb > 0;
+    private bool IsFolderSelected => _isWholeArchive || _selectedCategoryKey is not null;
+
+    private void SelectWholeArchive()
+    {
+        _isWholeArchive = true;
+        _selectedCategoryKey = null;
+        _folderColumns.Clear();
+    }
+
+    private async Task SelectCategoryAsync(string categoryKey)
+    {
+        if (categoryKey == _selectedCategoryKey && !_isWholeArchive)
+        {
+            return;
+        }
+
+        _isWholeArchive = false;
+        _selectedCategoryKey = categoryKey;
+        _folderColumns.Clear();
+        await AppendColumnAsync(categoryKey, folderId: null);
+    }
+
+    private async Task SelectFolderAsync(int columnIndex, ArchiveItemDto folder)
+    {
+        _folderColumns.RemoveRange(columnIndex + 1, _folderColumns.Count - columnIndex - 1);
+        await AppendColumnAsync(_folderColumns[columnIndex].CategoryKey, folder.Id);
+    }
+
+    private async Task AppendColumnAsync(string categoryKey, string? folderId)
+    {
+        var column = new FolderColumn { CategoryKey = categoryKey, FolderId = folderId, IsLoading = true };
+        _folderColumns.Add(column);
+        StateHasChanged();
+
+        try
+        {
+            var url = $"api/archive/{Uri.EscapeDataString(categoryKey)}/items";
+            if (!string.IsNullOrWhiteSpace(folderId))
+            {
+                url += $"?folderId={Uri.EscapeDataString(folderId)}";
+            }
+
+            var listing = await Http.GetFromJsonAsync<ArchiveListingDto>(url);
+            column.Items = (listing?.Items ?? [])
+                .Where(item => item.Kind == ArchiveItemKind.Folder)
+                .ToList();
+        }
+        catch (HttpRequestException)
+        {
+            column.Error = "This folder could not be loaded.";
+        }
+        finally
+        {
+            column.IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        if (OnCancel.HasDelegate)
+        {
+            await OnCancel.InvokeAsync();
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        _showValidation = true;
+        _error = null;
+        if (!IsFolderSelected || !IsMaxSizeValid)
+        {
+            return;
+        }
+
+        var folderId = _folderColumns.Count > 0 ? _folderColumns[^1].FolderId : null;
+        var maxSizeBytes = (long)(_maxSizeGb * 1024 * 1024 * 1024);
+        var request = new AddCustomStorageViewRequest(_isWholeArchive ? null : _selectedCategoryKey, folderId, _isWholeArchive, maxSizeBytes);
+
+        _operationPending = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/dashboard/storage/custom", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = "This folder could not be added.";
+                return;
+            }
+
+            var views = await response.Content.ReadFromJsonAsync<List<CustomStorageViewDto>>() ?? [];
+            if (OnConfirmed.HasDelegate)
+            {
+                await OnConfirmed.InvokeAsync(views);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "This folder could not be added.";
+        }
+        finally
+        {
+            _operationPending = false;
+        }
+    }
+}
