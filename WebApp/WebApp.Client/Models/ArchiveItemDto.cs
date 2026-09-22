@@ -32,4 +32,5 @@ public sealed record ArchiveItemDto(
     string? PdfUrl = null,
     bool HasPlayableMedia = false,
     bool IsConvertibleVideo = false,
-    IReadOnlyList<AudioTrackDto>? AudioTracks = null);
+    IReadOnlyList<AudioTrackDto>? AudioTracks = null,
+    string? FolderThumbnailUrl = null);

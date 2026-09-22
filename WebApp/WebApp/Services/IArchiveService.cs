@@ -73,6 +73,22 @@ internal interface IArchiveService
 
     bool TryResolveAlbumCover(string categoryKey, string folderId, out ArchiveAlbumCoverInfo? cover);
 
+    /// <summary>
+    /// Resolves an opaque item ID to a non-category-root folder within the given category.
+    /// </summary>
+    bool TryResolveFolder(string categoryKey, string itemId, out ArchiveItemEntry? folder);
+
+    /// <summary>
+    /// Computes the reserved folder-thumbnail file path physically inside <paramref name="folder"/>,
+    /// regardless of whether it currently exists.
+    /// </summary>
+    string GetFolderThumbnailPath(ArchiveItemEntry folder);
+
+    /// <summary>
+    /// Resolves the reserved folder-thumbnail file path for <paramref name="folder"/> only if it exists.
+    /// </summary>
+    bool TryGetFolderThumbnailPath(ArchiveItemEntry folder, out string thumbnailPath);
+
     string GetCategoryRootPath(string categoryKey);
 
     string ComputeItemId(string categoryKey, string physicalPath);

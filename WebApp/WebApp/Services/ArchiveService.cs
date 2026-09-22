@@ -49,6 +49,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
 
     private const string BooksCategoryKey = "books";
 
+    internal const string FolderThumbnailFileName = ".pereneFolderThumbnail.jpg";
+
     private static readonly HashSet<string> AlbumCoverExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg" };
 
@@ -486,6 +488,41 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
     }
 
+    public bool TryResolveFolder(string categoryKey, string itemId, out ArchiveItemEntry? folder)
+    {
+        folder = null;
+        try
+        {
+            var category = ResolveCategory(categoryKey);
+            var resolved = ResolveFolder(category, itemId);
+            if (IsSamePath(resolved.PhysicalPath, GetCategoryRoot(category)))
+            {
+                return false;
+            }
+
+            folder = resolved;
+            return true;
+        }
+        catch (ArchiveException)
+        {
+            return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    public string GetFolderThumbnailPath(ArchiveItemEntry folder) =>
+        Path.Combine(folder.PhysicalPath, FolderThumbnailFileName);
+
+    public bool TryGetFolderThumbnailPath(ArchiveItemEntry folder, out string thumbnailPath)
+    {
+        thumbnailPath = GetFolderThumbnailPath(folder);
+        return File.Exists(thumbnailPath);
+    }
+
     public bool TryResolveAlbumCover(string categoryKey, string folderId, out ArchiveAlbumCoverInfo? cover)
     {
         cover = null;
@@ -556,6 +593,11 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         {
             try
             {
+                if (string.Equals(Path.GetFileName(path), FolderThumbnailFileName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 var attributes = File.GetAttributes(path);
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
@@ -583,7 +625,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
                     IsTextDocument(extension),
                     IsPdfDocument(extension),
                     HasPlayableMedia: isDirectory && HasPlayableMediaRecursive(canonicalPath),
-                    IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension)));
+                    IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension),
+                    HasFolderThumbnail: isDirectory && File.Exists(Path.Combine(canonicalPath, FolderThumbnailFileName))));
             }
             catch (Exception exception) when (
                 exception is IOException or UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
@@ -658,6 +701,11 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         {
             try
             {
+                if (string.Equals(Path.GetFileName(path), FolderThumbnailFileName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 var attributes = File.GetAttributes(path);
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
@@ -708,7 +756,8 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             IsTextDocument(extension),
             IsPdfDocument(extension),
             extension is not null && ComicExtensions.Contains(extension),
-            IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension));
+            IsConvertibleVideo: extension is not null && ConversionSourceExtensions.Contains(extension),
+            HasFolderThumbnail: isDirectory && File.Exists(Path.Combine(canonicalPath, FolderThumbnailFileName)));
     }
 
     private static bool IsBook(ArchiveCategory category, string? extension) =>
@@ -819,6 +868,11 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
                 {
                     try
                     {
+                        if (string.Equals(Path.GetFileName(path), FolderThumbnailFileName, StringComparison.Ordinal))
+                        {
+                            return null;
+                        }
+
                         var attributes = File.GetAttributes(path);
                         if ((attributes & FileAttributes.ReparsePoint) != 0)
                         {

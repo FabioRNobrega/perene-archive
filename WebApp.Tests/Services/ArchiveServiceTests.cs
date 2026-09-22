@@ -961,6 +961,114 @@ public sealed class ArchiveServiceTests
         Assert.Equal(item.Id, computed);
     }
 
+    [Fact]
+    public void BuildListing_never_reports_the_reserved_folder_thumbnail_file_as_a_child_item()
+    {
+        using var root = CreateArchive();
+        var folderPath = Path.Combine(root.Path, "Pictures", "Album");
+        Directory.CreateDirectory(folderPath);
+        awaitFile(Path.Combine(folderPath, ArchiveService.FolderThumbnailFileName));
+        awaitFile(Path.Combine(folderPath, "photo.jpg"));
+        var service = CreateService(root.Path);
+        var folder = service.List("photos", null).Items.Single(item => item.Name == "Album");
+
+        var listing = service.List("photos", folder.Id);
+
+        Assert.Single(listing.Items);
+        Assert.DoesNotContain(listing.Items, item => item.Name == ArchiveService.FolderThumbnailFileName);
+    }
+
+    [Fact]
+    public void Folder_without_a_thumbnail_resolves_no_thumbnail_path()
+    {
+        using var root = CreateArchive();
+        Directory.CreateDirectory(Path.Combine(root.Path, "Pictures", "Album"));
+        var service = CreateService(root.Path);
+        var folder = service.List("photos", null).Items.Single(item => item.Name == "Album");
+        var resolvedFolder = service.List("photos", folder.Id).CurrentFolder;
+
+        Assert.False(service.TryGetFolderThumbnailPath(resolvedFolder, out _));
+    }
+
+    [Fact]
+    public void Folder_with_a_reserved_thumbnail_file_resolves_its_path()
+    {
+        using var root = CreateArchive();
+        var folderPath = Path.Combine(root.Path, "Pictures", "Album");
+        Directory.CreateDirectory(folderPath);
+        awaitFile(Path.Combine(folderPath, ArchiveService.FolderThumbnailFileName));
+        var service = CreateService(root.Path);
+        var folder = service.List("photos", null).Items.Single(item => item.Name == "Album");
+        var resolvedFolder = service.List("photos", folder.Id).CurrentFolder;
+
+        Assert.True(service.TryGetFolderThumbnailPath(resolvedFolder, out var path));
+        Assert.Equal(Path.Combine(folderPath, ArchiveService.FolderThumbnailFileName), path);
+    }
+
+    [Fact]
+    public void Reserved_thumbnail_filename_is_excluded_from_album_cover_resolution()
+    {
+        using var root = CreateArchive();
+        var album = Path.Combine(root.Path, "Music", "Album");
+        Directory.CreateDirectory(album);
+        awaitFile(Path.Combine(album, ArchiveService.FolderThumbnailFileName));
+        var service = CreateService(root.Path);
+        var folder = service.List("music", null).Items.Single(item => item.Name == "Album");
+
+        Assert.False(service.TryResolveAlbumCover("music", folder.Id, out _));
+    }
+
+    [Fact]
+    public void TryResolveFolder_resolves_a_non_root_folder_by_id()
+    {
+        using var root = CreateArchive();
+        Directory.CreateDirectory(Path.Combine(root.Path, "Pictures", "Album"));
+        var service = CreateService(root.Path);
+        var folder = service.List("photos", null).Items.Single(item => item.Name == "Album");
+
+        Assert.True(service.TryResolveFolder("photos", folder.Id, out var resolved));
+        Assert.Equal(Path.Combine(root.Path, "Pictures", "Album"), resolved!.PhysicalPath);
+    }
+
+    [Fact]
+    public void TryResolveFolder_rejects_the_category_root()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+        var categoryRoot = service.List("photos", null).CurrentFolder;
+
+        Assert.False(service.TryResolveFolder("photos", categoryRoot.Id, out _));
+    }
+
+    [Fact]
+    public void TryResolveFolder_rejects_a_file_id()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Pictures", "photo.jpg"));
+        var service = CreateService(root.Path);
+        var file = service.List("photos", null).Items.Single(item => item.Name == "photo.jpg");
+
+        Assert.False(service.TryResolveFolder("photos", file.Id, out _));
+    }
+
+    [Fact]
+    public void Renaming_a_folder_keeps_its_reserved_thumbnail_file_resolvable_at_the_new_id()
+    {
+        using var root = CreateArchive();
+        var folderPath = Path.Combine(root.Path, "Pictures", "Album");
+        Directory.CreateDirectory(folderPath);
+        awaitFile(Path.Combine(folderPath, ArchiveService.FolderThumbnailFileName));
+        var service = CreateService(root.Path);
+        var folder = service.List("photos", null).Items.Single(item => item.Name == "Album");
+
+        service.Rename("photos", folder.Id, "Renamed");
+
+        var renamed = service.List("photos", null).Items.Single(item => item.Name == "Renamed");
+        Assert.True(service.TryResolveFolder("photos", renamed.Id, out var resolvedFolder));
+        Assert.True(service.TryGetFolderThumbnailPath(resolvedFolder!, out var path));
+        Assert.Equal(Path.Combine(root.Path, "Pictures", "Renamed", ArchiveService.FolderThumbnailFileName), path);
+    }
+
     private static ArchiveService CreateService(string path) =>
         new(Options.Create(new ArchiveRootOptions { Path = path }));
 

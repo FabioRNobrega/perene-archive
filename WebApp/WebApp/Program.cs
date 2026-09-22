@@ -174,6 +174,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsHistoryBack
 builder.Services.AddSingleton<ImageCropNamingService>();
 builder.Services.AddSingleton<IImageCropGenerator, ImageSharpCropGenerator>();
 builder.Services.AddSingleton<IImageCropService, ImageCropService>();
+builder.Services.AddSingleton<IFolderThumbnailProcessor, FolderThumbnailProcessor>();
 builder.Services.AddSingleton<IEpubContentSanitizer, EpubContentSanitizer>();
 builder.Services.AddSingleton<IEpubBookService, EpubBookService>();
 builder.Services.AddSingleton<IEpubNoteService, EpubNoteService>();

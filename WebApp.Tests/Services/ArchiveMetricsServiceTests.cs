@@ -101,6 +101,9 @@ public sealed class ArchiveMetricsServiceTests
         public bool TryResolveTextDocument(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolvePdfDocument(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveAlbumCover(string categoryKey, string folderId, out ArchiveAlbumCoverInfo? cover) => throw new NotSupportedException();
+        public bool TryResolveFolder(string categoryKey, string itemId, out ArchiveItemEntry? folder) => throw new NotSupportedException();
+        public string GetFolderThumbnailPath(ArchiveItemEntry folder) => throw new NotSupportedException();
+        public bool TryGetFolderThumbnailPath(ArchiveItemEntry folder, out string thumbnailPath) => throw new NotSupportedException();
         public string ComputeItemId(string categoryKey, string physicalPath) => throw new NotSupportedException();
     }
 

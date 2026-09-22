@@ -20,4 +20,5 @@ internal sealed record ArchiveItemEntry(
     bool IsComic = false,
     string? AlbumCoverId = null,
     bool HasPlayableMedia = false,
-    bool IsConvertibleVideo = false);
+    bool IsConvertibleVideo = false,
+    bool HasFolderThumbnail = false);

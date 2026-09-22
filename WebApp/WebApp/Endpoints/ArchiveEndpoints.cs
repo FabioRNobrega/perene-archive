@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using WebApp.Client.Models;
@@ -24,6 +25,9 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync);
         endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/folder-thumbnail", UploadFolderThumbnailAsync).DisableAntiforgery();
+        endpoints.MapDelete("/api/archive/{category}/items/{id}/folder-thumbnail", DeleteFolderThumbnail);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/folder-thumbnail", GetFolderThumbnail);
         endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
         endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
         endpoints.MapPost("/api/archive/{category}/items/{id}/crop", CreateCropAsync);
@@ -671,6 +675,146 @@ internal static class ArchiveEndpoints
         }
     }
 
+    private const long FolderThumbnailMaxUploadBytes = 10L * 1024 * 1024;
+
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FolderThumbnailLocks =
+        new(StringComparer.Ordinal);
+
+    private static SemaphoreSlim GetFolderThumbnailLock(string physicalPath) =>
+        FolderThumbnailLocks.GetOrAdd(physicalPath, _ => new SemaphoreSlim(1, 1));
+
+    private static async Task<IResult> UploadFolderThumbnailAsync(
+        string category,
+        string id,
+        IFormFile? file,
+        IArchiveService archive,
+        IFolderThumbnailProcessor processor,
+        CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveFolder(category, id, out var folder) || folder is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (file is null || file.Length <= 0)
+        {
+            return Results.BadRequest(new { error = "A file is required." });
+        }
+
+        if (file.Length > FolderThumbnailMaxUploadBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var thumbnailPath = archive.GetFolderThumbnailPath(folder);
+        var folderLock = GetFolderThumbnailLock(folder.PhysicalPath);
+        await folderLock.WaitAsync(cancellationToken);
+        try
+        {
+            FolderThumbnailProcessResult result;
+            await using (var stream = file.OpenReadStream())
+            {
+                result = await processor.ProcessAsync(stream, cancellationToken);
+            }
+
+            if (result.Status != FolderThumbnailProcessStatus.Success || result.JpegBytes is null)
+            {
+                return Results.BadRequest(new { error = "The selected file is not a supported image." });
+            }
+
+            var temporaryPath = BuildFolderThumbnailTempPath(thumbnailPath);
+            try
+            {
+                await File.WriteAllBytesAsync(temporaryPath, result.JpegBytes, cancellationToken);
+                File.Move(temporaryPath, thumbnailPath, overwrite: true);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                TryDeleteFolderThumbnailTemp(temporaryPath);
+                return Results.Problem(
+                    title: "The thumbnail could not be saved.",
+                    detail: "The folder thumbnail file could not be written.",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        finally
+        {
+            folderLock.Release();
+        }
+
+        return archive.TryResolveFolder(category, id, out var updated) && updated is not null
+            ? Results.Ok(ToDto(updated))
+            : Results.NotFound();
+    }
+
+    private static IResult DeleteFolderThumbnail(string category, string id, IArchiveService archive)
+    {
+        if (!archive.TryResolveFolder(category, id, out var folder) || folder is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!archive.TryGetFolderThumbnailPath(folder, out var thumbnailPath))
+        {
+            return Results.NotFound();
+        }
+
+        try
+        {
+            File.Delete(thumbnailPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Results.Problem(
+                title: "The thumbnail could not be removed.",
+                detail: "The folder thumbnail file could not be deleted.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        return archive.TryResolveFolder(category, id, out var updated) && updated is not null
+            ? Results.Ok(ToDto(updated))
+            : Results.NotFound();
+    }
+
+    private static IResult GetFolderThumbnail(string category, string id, IArchiveService archive)
+    {
+        if (!archive.TryResolveFolder(category, id, out var folder) || folder is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!archive.TryGetFolderThumbnailPath(folder, out var thumbnailPath))
+        {
+            return Results.NotFound();
+        }
+
+        return Results.File(thumbnailPath, "image/jpeg");
+    }
+
+    private static string BuildFolderThumbnailTempPath(string destinationPath)
+    {
+        var directory = Path.GetDirectoryName(destinationPath) ?? string.Empty;
+        return Path.Combine(directory, $".{Guid.NewGuid():N}.folderThumbnail.tmp");
+    }
+
+    private static void TryDeleteFolderThumbnailTemp(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
     private static IResult GetThumbnail(
         string category,
         string id,
@@ -1269,7 +1413,8 @@ internal static class ArchiveEndpoints
             IsComic: item.IsComic,
             PdfUrl: PdfUrl(item),
             HasPlayableMedia: item.HasPlayableMedia,
-            IsConvertibleVideo: item.IsConvertibleVideo);
+            IsConvertibleVideo: item.IsConvertibleVideo,
+            FolderThumbnailUrl: FolderThumbnailUrl(item));
     }
 
     private static (string? CoverUrl, string? Title, string? Author) ReadBookSummary(
@@ -1438,6 +1583,11 @@ internal static class ArchiveEndpoints
     private static string? AlbumCoverUrl(ArchiveItemEntry item) =>
         item.IsMusic && !string.IsNullOrWhiteSpace(item.AlbumCoverId)
             ? $"/api/archive/{Uri.EscapeDataString(item.Category.Key)}/items/{Uri.EscapeDataString(item.AlbumCoverId)}/cover"
+            : null;
+
+    private static string? FolderThumbnailUrl(ArchiveItemEntry item) =>
+        item.Kind == ArchiveItemKind.Folder && item.HasFolderThumbnail
+            ? $"/api/archive/{Uri.EscapeDataString(item.Category.Key)}/items/{Uri.EscapeDataString(item.Id)}/folder-thumbnail"
             : null;
 
     private static bool TryResolveMediaEntry(
