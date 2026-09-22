@@ -14,6 +14,7 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items", List);
         endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist);
         endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/download", DownloadAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/audio", StreamAudio);
         endpoints.MapGet("/api/archive/{category}/items/{id}/cover", GetAlbumCover);
@@ -461,11 +462,49 @@ internal static class ArchiveEndpoints
         return Results.Empty;
     }
 
-    private static IResult StreamVideo(string category, string id, IArchiveService archive)
+    private static async Task<IResult> PrepareAudioTrackAsync(
+        string category,
+        string id,
+        int index,
+        IArchiveService archive,
+        VideoMetadataCoordinator metadataCoordinator,
+        AudioTrackRemuxService remuxService,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolveMediaEntry(category, id, archive, out var entry) || entry is null ||
+            !await VideoEndpoints.IsValidAudioTrackAsync(entry, index, metadataCoordinator, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(new AudioTrackPrepareResponse(remuxService.Ensure(entry, index).ToString()));
+    }
+
+    private static async Task<IResult> StreamVideo(
+        string category,
+        string id,
+        int? audio,
+        IArchiveService archive,
+        VideoMetadataCoordinator metadataCoordinator,
+        AudioTrackRemuxService remuxService,
+        CancellationToken cancellationToken)
     {
         if (!archive.TryResolveVideo(category, id, out var item) || item is null || item.Extension is null)
         {
             return Results.NotFound();
+        }
+
+        if (audio is not null and not 0)
+        {
+            var entry = ToMediaEntry(item);
+            if (!await VideoEndpoints.IsValidAudioTrackAsync(entry, audio.Value, metadataCoordinator, cancellationToken))
+            {
+                return Results.NotFound();
+            }
+
+            return remuxService.IsReady(entry, audio.Value)
+                ? Results.File(remuxService.GetFinalPath(entry, audio.Value), "video/mp4", enableRangeProcessing: true)
+                : Results.StatusCode(StatusCodes.Status409Conflict);
         }
 
         if (!VideoContentTypes.TryGetValue(item.Extension, out var contentType))
@@ -1353,7 +1392,8 @@ internal static class ArchiveEndpoints
             AlbumCoverUrl(item),
             IsComic: item.IsComic,
             HasPlayableMedia: item.HasPlayableMedia,
-            IsConvertibleVideo: item.IsConvertibleVideo);
+            IsConvertibleVideo: item.IsConvertibleVideo,
+            AudioTracks: item.IsVideo ? VideoEndpoints.BuildAudioTracks(metadata) : null);
     }
 
     private static string? AudioUrl(ArchiveItemEntry item) =>

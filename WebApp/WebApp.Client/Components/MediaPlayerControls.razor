@@ -250,6 +250,44 @@
             <i class="bi bi-card-text" aria-hidden="true"></i>
         </button>
         }
+        @if (!IsMusicMode && HasMultipleAudioTracks)
+        {
+        <div class="btn-group dropup" role="group">
+            <button class="btn @ActionCssClass"
+                    type="button"
+                    disabled="@IsAudioTrackBusy"
+                    aria-label="@(IsAudioTrackBusy ? "Preparing audio track" : "Audio track")"
+                    title="@(IsAudioTrackBusy ? "Preparing audio track…" : "Audio track")"
+                    data-bs-toggle="dropdown"
+                    data-bs-boundary="viewport"
+                    data-bs-strategy="fixed"
+                    aria-expanded="false"
+                    aria-busy="@BooleanValue(IsAudioTrackBusy)">
+                @if (IsAudioTrackBusy)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                }
+                else
+                {
+                    <i class="bi bi-translate" aria-hidden="true"></i>
+                }
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-label="Audio tracks">
+                @foreach (var track in AudioTracks ?? [])
+                {
+                    var isSelected = (State.SelectedAudioTrackIndex ?? 0) == track.Index;
+                    <li>
+                        <button class="dropdown-item @(isSelected ? "active" : null)"
+                                type="button"
+                                aria-current="@(isSelected ? "true" : null)"
+                                @onclick="() => HandleSelectAudioTrackAsync(track.Index)">
+                            <i class="bi @(isSelected ? "bi-check2" : "bi-translate") icon" aria-hidden="true"></i>@track.Label
+                        </button>
+                    </li>
+                }
+            </ul>
+        </div>
+        }
         @if (ShowPlaylistButton)
         {
         <button class="btn @ActionCssClass"
@@ -325,6 +363,10 @@
     [Parameter] public int FillTabFocusRequest { get; set; }
     [Parameter] public bool HasSubtitles { get; set; }
     [Parameter] public EventCallback ToggleSubtitles { get; set; }
+    [Parameter] public bool HasMultipleAudioTracks { get; set; }
+    [Parameter] public bool IsAudioTrackBusy { get; set; }
+    [Parameter] public IReadOnlyList<AudioTrackDto>? AudioTracks { get; set; }
+    [Parameter] public EventCallback<int> SelectAudioTrack { get; set; }
     [Parameter] public bool CanSaveCut { get; set; } = true;
     [Parameter] public bool IsMusicMode { get; set; }
     [Parameter] public bool HasPlaylist { get; set; }
@@ -454,6 +496,8 @@
     private Task HandleTogglePlaybackAsync() => TogglePlayback.InvokeAsync();
     private Task HandleToggleMuteAsync() => ToggleMute.InvokeAsync();
     private Task HandleToggleStandardLoopAsync() => ToggleStandardLoop.InvokeAsync();
+    private Task HandleSelectAudioTrackAsync(int index) => SelectAudioTrack.InvokeAsync(index);
+
     private Task HandleToggleSubtitlesAsync() => ToggleSubtitles.InvokeAsync();
     private Task HandleSkipBackwardAsync() => SkipBackward.InvokeAsync();
     private Task HandleSkipForwardAsync() => SkipForward.InvokeAsync();

@@ -16,6 +16,7 @@ public sealed class MediaPlayerState
     public bool IsStandardLoop { get; private set; }
     public bool IsAbLoop { get; private set; }
     public bool IsSubtitlesEnabled { get; private set; } = true;
+    public int? SelectedAudioTrackIndex { get; private set; }
     public double? MarkerA { get; private set; }
     public double? MarkerB { get; private set; }
     public string? ValidationMessage { get; private set; }
@@ -38,6 +39,7 @@ public sealed class MediaPlayerState
         IsStandardLoop = false;
         IsAbLoop = false;
         IsSubtitlesEnabled = true;
+        SelectedAudioTrackIndex = null;
         MarkerA = null;
         MarkerB = null;
         ValidationMessage = null;
@@ -145,6 +147,8 @@ public sealed class MediaPlayerState
     }
 
     public void SetSubtitlesEnabled(bool enabled) => IsSubtitlesEnabled = enabled;
+
+    public void SetSelectedAudioTrack(int index) => SelectedAudioTrackIndex = index;
 
     public bool TryMoveToAbStart(out double target)
     {

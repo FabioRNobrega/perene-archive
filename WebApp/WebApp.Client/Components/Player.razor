@@ -180,6 +180,7 @@
     private bool _abSeekPending;
     private bool _isSavingCut;
     private bool _playAfterSelectionChange;
+    private bool _audioTrackBusy;
     private double _pendingResumeTime;
     private bool _pendingResumePlaying;
     private bool _isFullscreen;
@@ -216,6 +217,10 @@
                                                                    FillTabFocusRequest="_fillTabFocusRequest"
                                                                    HasSubtitles="HasSubtitles"
                                                                    ToggleSubtitles="ToggleSubtitlesAsync"
+                                                                   HasMultipleAudioTracks="HasMultipleAudioTracks"
+                                                                   AudioTracks="Selected?.AudioTracks"
+                                                                   IsAudioTrackBusy="_audioTrackBusy"
+                                                                   SelectAudioTrack="SelectAudioTrackAsync"
                                                                    CanSaveCut="PlayerState.CanSaveCut"
                                                                    IsMusicMode="PlayerState.IsMusic"
                                                                    HasPlaylist="PlayerState.HasPlaylist"
@@ -227,10 +232,13 @@
                                                                    CanSelectNextTrack="PlayerState.CanSelectNextTrack"
                                                                    IsFooterMode="@(!ShowOverlayControls)" />;
 
+    private bool HasMultipleAudioTracks => !PlayerState.IsMusic && Selected?.AudioTracks?.Count > 1;
     private bool HasSubtitles => Selected?.SubtitleState == SubtitleState.Ready;
     private string SubtitleSource => Selected?.SubtitleUrl ?? $"{StreamBasePath}/{Selected?.Id}/subtitle";
     private string VideoSource => PlayerState.Playlist.FirstOrDefault(track => track.Id == Selected?.Id)?.SourceUrl
-        ?? $"{StreamBasePath}/{Selected?.Id}/stream";
+        ?? (_player.SelectedAudioTrackIndex is > 0
+            ? $"{StreamBasePath}/{Selected?.Id}/stream?audio={_player.SelectedAudioTrackIndex}"
+            : $"{StreamBasePath}/{Selected?.Id}/stream");
 
     private string MusicSource => PlayerState.Playlist.FirstOrDefault(track => track.Id == Selected?.Id)?.SourceUrl
         ?? $"{StreamBasePath}/{Selected?.Id}/audio";
@@ -256,7 +264,7 @@
         ? "card position-fixed top-0 start-0 z-3 w-100 h-100 overflow-hidden border-0 rounded-0"
         : IsPlaylistMode
             ? "card w-100 h-100 min-h-0 overflow-hidden border-0 bg-body-tertiary"
-            : "player-footer position-fixed start-0 end-0 bottom-0 z-3 bg-body border-top shadow-lg rounded-top-4 overflow-hidden";
+            : "player-footer position-fixed start-0 end-0 bottom-0 z-3 bg-body border-top shadow-lg rounded-top-4 overflow-visible";
 
     private string PreviewStageCssClass => _fillTab.IsActive
         ? "w-100 h-100 p-0 bg-dark"
@@ -512,6 +520,7 @@
             _pendingResumeTime = 0;
             _pendingResumePlaying = false;
 
+            await ExecuteMediaCommandAsync("setPlaybackRate", _player.PlaybackRate);
             await ExecuteMediaCommandAsync("seekVideo", resumeTime);
             if (resumePlaying)
             {
@@ -520,6 +529,69 @@
 
             await SynchronizeMediaStateAsync();
         }
+    }
+
+    private async Task SelectAudioTrackAsync(int index)
+    {
+        if (!HasMultipleAudioTracks || _audioTrackBusy || Selected is null ||
+            index == (_player.SelectedAudioTrackIndex ?? 0))
+        {
+            return;
+        }
+
+        var selectionId = Selected.Id;
+        if (index > 0)
+        {
+            _audioTrackBusy = true;
+            StateHasChanged();
+            var state = await PrepareAudioTrackAsync(selectionId, index);
+            _audioTrackBusy = false;
+            if (!string.Equals(Selected?.Id, selectionId, StringComparison.Ordinal) || _disposed)
+            {
+                return;
+            }
+
+            if (state != "Ready")
+            {
+                ShowPlayerCommandError();
+                return;
+            }
+        }
+
+        _pendingResumeTime = _player.CurrentTime;
+        _pendingResumePlaying = _player.IsPlaying;
+        _playerError = null;
+        _player.SetSelectedAudioTrack(index);
+        StateHasChanged();
+    }
+
+    private async Task<string> PrepareAudioTrackAsync(string selectionId, int index)
+    {
+        var url = $"{StreamBasePath}/{Uri.EscapeDataString(selectionId)}/audio-tracks/{index}";
+        try
+        {
+            while (!_disposed && string.Equals(Selected?.Id, selectionId, StringComparison.Ordinal))
+            {
+                using var response = await Http.PostAsync(url, content: null);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return "Failed";
+                }
+
+                var payload = await response.Content.ReadFromJsonAsync<AudioTrackPrepareResponse>();
+                if (payload?.State is "Ready" or "Failed")
+                {
+                    return payload.State;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+        }
+
+        return "Failed";
     }
 
     private async Task ApplyPlayerPreferencesAsync()

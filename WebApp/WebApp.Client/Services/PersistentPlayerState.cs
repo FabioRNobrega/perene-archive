@@ -64,7 +64,8 @@ public sealed class PersistentPlayerState
                 item.SubtitleUrl,
                 null,
                 null,
-                null),
+                null,
+                item.AudioTracks),
             $"api/archive/{Uri.EscapeDataString(category)}/items");
     }
 

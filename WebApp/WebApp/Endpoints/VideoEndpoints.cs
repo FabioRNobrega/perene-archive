@@ -21,6 +21,7 @@ internal static class VideoEndpoints
         endpoints.MapGet("/api/videos", GetCurrentSnapshot);
         endpoints.MapGet("/api/videos/{id}", GetVideoById);
         endpoints.MapGet("/api/videos/{id}/stream", StreamAsync);
+        endpoints.MapPost("/api/videos/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync);
         endpoints.MapGet("/api/videos/{id}/thumbnail", GetThumbnail);
         endpoints.MapGet("/api/videos/{id}/preview", GetPreview);
         endpoints.MapGet("/api/videos/{id}/subtitle", GetSubtitle);
@@ -93,11 +94,68 @@ internal static class VideoEndpoints
         return Results.Ok(item);
     }
 
-    private static IResult StreamAsync(string id, IVideoLibraryService library)
+    private static async Task<IResult> PrepareAudioTrackAsync(
+        string id,
+        int index,
+        IVideoLibraryService library,
+        VideoMetadataCoordinator metadataCoordinator,
+        AudioTrackRemuxService remuxService,
+        CancellationToken cancellationToken)
+    {
+        if (!library.TryResolve(id, out var entry) || entry is null ||
+            !await IsValidAudioTrackAsync(entry, index, metadataCoordinator, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(new AudioTrackPrepareResponse(remuxService.Ensure(entry, index).ToString()));
+    }
+
+    internal static async Task<bool> IsValidAudioTrackAsync(
+        VideoFileEntry entry,
+        int index,
+        VideoMetadataCoordinator metadataCoordinator,
+        CancellationToken cancellationToken)
+    {
+        if (index < 1)
+        {
+            return false;
+        }
+
+        try
+        {
+            var metadata = await metadataCoordinator.GetOrComputeAsync(entry, cancellationToken);
+            return index < (metadata.AudioTracks?.Count ?? 0);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<IResult> StreamAsync(
+        string id,
+        int? audio,
+        IVideoLibraryService library,
+        VideoMetadataCoordinator metadataCoordinator,
+        AudioTrackRemuxService remuxService,
+        CancellationToken cancellationToken)
     {
         if (!library.TryResolve(id, out var entry) || entry is null)
         {
             return Results.NotFound();
+        }
+
+        if (audio is not null and not 0)
+        {
+            if (!await IsValidAudioTrackAsync(entry, audio.Value, metadataCoordinator, cancellationToken))
+            {
+                return Results.NotFound();
+            }
+
+            return remuxService.IsReady(entry, audio.Value)
+                ? Results.File(remuxService.GetFinalPath(entry, audio.Value), "video/mp4", enableRangeProcessing: true)
+                : Results.StatusCode(StatusCodes.Status409Conflict);
         }
 
         try
@@ -299,8 +357,19 @@ internal static class VideoEndpoints
             entry.Id, entry.Name, entry.Extension, entry.SizeBytes,
             thumbnailState, thumbnailUrl, hoverPreviewState, hoverPreviewUrl,
             subtitleState, subtitleUrl,
-            metadata.Duration?.TotalSeconds, metadata.Width, metadata.Height);
+            metadata.Duration?.TotalSeconds, metadata.Width, metadata.Height,
+            BuildAudioTracks(metadata));
     }
+
+    internal static IReadOnlyList<AudioTrackDto>? BuildAudioTracks(VideoMetadata metadata) =>
+        metadata.AudioTracks is { Count: > 1 } tracks
+            ? tracks.Select(track => new AudioTrackDto(
+                track.Index,
+                track.Language,
+                track.Language is null
+                    ? $"Track {track.Index + 1} (language unknown)"
+                    : $"Track {track.Index + 1} ({track.Language})")).ToList()
+            : null;
 
     internal sealed record VideoCutRequest(double Start, double End);
 

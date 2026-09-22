@@ -168,6 +168,22 @@ body { min-height: 100%; }
 /* Bootstrap ships vh-100/min-vh-100 but no min-height:0 utility, needed to let flex children shrink and scroll internally instead of growing the page past the viewport. */
 .min-h-0 { min-height: 0; }
 .text-brand-gold { color: var(--brand-gold-onbg) !important; }
+
+/* Dropdown: real Bootstrap .dropdown, themed per the Perene Tech design guide */
+.dropdown-menu {
+    --bs-dropdown-bg: var(--bg-surface);
+    --bs-dropdown-border-color: var(--border);
+    --bs-dropdown-color: var(--text-body);
+    --bs-dropdown-link-color: var(--text-body);
+    --bs-dropdown-link-hover-bg: var(--hover-bg);
+    --bs-dropdown-link-hover-color: var(--brand-green-onbg);
+    --bs-dropdown-link-active-bg: var(--tint-gold-bg);
+    --bs-dropdown-link-active-color: var(--brand-gold-onbg);
+    font-size: .87rem;
+}
+.dropdown-item { display: flex; align-items: center; gap: 10px; }
+.dropdown-item .icon { color: var(--text-muted); width: 1em; }
+.dropdown-item.active .icon, .dropdown-item:hover .icon { color: inherit; }
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 

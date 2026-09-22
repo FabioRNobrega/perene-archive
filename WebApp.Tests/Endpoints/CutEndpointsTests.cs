@@ -33,7 +33,7 @@ public sealed class CutEndpointsTests
         using var document = JsonDocument.Parse(json);
         var item = Assert.Single(document.RootElement.EnumerateArray());
         Assert.Equal(
-            ["durationSeconds", "extension", "height", "hoverPreviewState", "hoverPreviewUrl", "id", "name", "sizeBytes", "subtitleState", "subtitleUrl", "thumbnailState", "thumbnailUrl", "width"],
+            ["audioTracks", "durationSeconds", "extension", "height", "hoverPreviewState", "hoverPreviewUrl", "id", "name", "sizeBytes", "subtitleState", "subtitleUrl", "thumbnailState", "thumbnailUrl", "width"],
             item.EnumerateObject().Select(property => property.Name).OrderBy(name => name));
         Assert.Equal("Jennifer White 0001.mp4", item.GetProperty("name").GetString());
         Assert.Equal((int)ThumbnailState.Pending, item.GetProperty("thumbnailState").GetInt32());

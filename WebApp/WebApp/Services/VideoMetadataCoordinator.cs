@@ -3,7 +3,8 @@ using WebApp.Models;
 
 namespace WebApp.Services;
 
-internal sealed class VideoMetadataCoordinator(IVideoDurationProbe durationProbe, IVideoResolutionProbe resolutionProbe)
+internal sealed class VideoMetadataCoordinator(IVideoDurationProbe durationProbe, IVideoResolutionProbe resolutionProbe,
+    IVideoAudioTrackProbe audioTrackProbe)
 {
     private readonly ConcurrentDictionary<string, Task<VideoMetadata>> _cache = new(StringComparer.Ordinal);
 
@@ -29,9 +30,10 @@ internal sealed class VideoMetadataCoordinator(IVideoDurationProbe durationProbe
     {
         var durationTask = durationProbe.GetDurationAsync(entry.PhysicalPath, cancellationToken);
         var resolutionTask = resolutionProbe.GetResolutionAsync(entry.PhysicalPath, cancellationToken);
-        await Task.WhenAll(durationTask, resolutionTask);
+        var audioTrackTask = audioTrackProbe.GetAudioTracksAsync(entry.PhysicalPath, cancellationToken);
+        await Task.WhenAll(durationTask, resolutionTask, audioTrackTask);
 
         var (width, height) = resolutionTask.Result;
-        return new VideoMetadata(durationTask.Result, width, height);
+        return new VideoMetadata(durationTask.Result, width, height, audioTrackTask.Result);
     }
 }

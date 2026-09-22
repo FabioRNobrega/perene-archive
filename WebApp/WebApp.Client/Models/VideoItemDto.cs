@@ -13,4 +13,5 @@ public sealed record VideoItemDto(
     string? SubtitleUrl,
     double? DurationSeconds,
     int? Width,
-    int? Height);
+    int? Height,
+    IReadOnlyList<AudioTrackDto>? AudioTracks = null);

@@ -31,4 +31,5 @@ public sealed record ArchiveItemDto(
     bool IsComic = false,
     string? PdfUrl = null,
     bool HasPlayableMedia = false,
-    bool IsConvertibleVideo = false);
+    bool IsConvertibleVideo = false,
+    IReadOnlyList<AudioTrackDto>? AudioTracks = null);
