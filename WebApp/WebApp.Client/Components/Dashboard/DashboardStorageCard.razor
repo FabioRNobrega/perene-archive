@@ -19,7 +19,7 @@
         else
         {
             <div class="mb-2">
-                <div class="d-flex justify-content-between align-items-center small mb-1">
+                <div class="d-flex justify-content-between align-items-center small mb-2">
                     <span class="d-flex align-items-center gap-1">
                         <button type="button"
                                 class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-1 lh-1"
@@ -107,15 +107,6 @@
                     </div>
                 </div>
             }
-
-            <dl class="row small mb-0">
-                <dt class="col-7">Read throughput</dt>
-                <dd class="col-5 text-end">@DashboardFormat.BytesPerSecond(_metrics.ReadBytesPerSecond)</dd>
-                <dt class="col-7">Write throughput</dt>
-                <dd class="col-5 text-end">@DashboardFormat.BytesPerSecond(_metrics.WriteBytesPerSecond)</dd>
-                <dt class="col-7">Health</dt>
-                <dd class="col-5 text-end">@_metrics.Health</dd>
-            </dl>
         }
     </div>
 </div>
