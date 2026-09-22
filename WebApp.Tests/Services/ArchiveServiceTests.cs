@@ -316,6 +316,89 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void BatchMove_returns_a_pending_job_with_combined_total_items_without_touching_the_filesystem()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "Folder", "Nested"));
+        awaitFile(Path.Combine(root.Path, "Documents", "Folder", "b.txt"));
+        awaitFile(Path.Combine(root.Path, "Documents", "Folder", "Nested", "c.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Videos", "Target"));
+        var service = CreateService(root.Path);
+        var items = service.List("documents", null).Items;
+        var file = items.Single(item => item.Name == "a.txt");
+        var folder = items.Single(item => item.Name == "Folder");
+        var target = service.List("videos", null).Items.Single(item => item.Name == "Target");
+
+        var job = service.BatchMove("documents", [file.Id, folder.Id], "videos", target.Id);
+
+        Assert.Equal(ArchiveMutationKind.BatchMove, job.Kind);
+        Assert.Equal(3, job.TotalItems);
+        Assert.Equal("2 items", job.Label);
+        Assert.NotNull(job.BatchEntries);
+        Assert.Equal(2, job.BatchEntries!.Count);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "a.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root.Path, "Documents", "Folder")));
+    }
+
+    [Fact]
+    public void BatchMove_rejects_the_whole_batch_when_one_item_conflicts_and_enqueues_nothing()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        awaitFile(Path.Combine(root.Path, "Documents", "b.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Videos", "Target"));
+        awaitFile(Path.Combine(root.Path, "Videos", "Target", "b.txt"));
+        var service = CreateService(root.Path);
+        var items = service.List("documents", null).Items;
+        var fileA = items.Single(item => item.Name == "a.txt");
+        var fileB = items.Single(item => item.Name == "b.txt");
+        var target = service.List("videos", null).Items.Single(item => item.Name == "Target");
+
+        Assert.Throws<ArchiveConflictException>(() => service.BatchMove("documents", [fileA.Id, fileB.Id], "videos", target.Id));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "b.txt")));
+    }
+
+    [Fact]
+    public void BatchMove_rejects_the_whole_batch_when_one_item_would_move_a_folder_into_its_own_descendant()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "A", "B"));
+        var service = CreateService(root.Path);
+        var items = service.List("documents", null).Items;
+        var fileA = items.Single(item => item.Name == "a.txt");
+        var folderA = items.Single(item => item.Name == "A");
+        var folderB = service.List("documents", folderA.Id).Items.Single(item => item.Name == "B");
+
+        Assert.Throws<ArchiveValidationException>(() => service.BatchMove("documents", [fileA.Id, folderA.Id], "documents", folderB.Id));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "a.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root.Path, "Documents", "A")));
+    }
+
+    [Fact]
+    public void BatchMove_rejects_a_category_root_in_the_selection()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        var service = CreateService(root.Path);
+        var file = service.List("documents", null).Items.Single(item => item.Name == "a.txt");
+        var categoryRoot = service.List("documents", null).CurrentFolder;
+
+        Assert.Throws<ArchiveNotFoundException>(() => service.BatchMove("documents", [file.Id, categoryRoot.Id], "videos", null));
+    }
+
+    [Fact]
+    public void BatchMove_throws_on_an_empty_selection()
+    {
+        using var root = CreateArchive();
+        var service = CreateService(root.Path);
+
+        Assert.Throws<ArchiveValidationException>(() => service.BatchMove("documents", [], "videos", null));
+    }
+
+    [Fact]
     public void MoveToTrash_returns_a_pending_job_descriptor_without_touching_the_filesystem()
     {
         using var root = CreateArchive();

@@ -45,3 +45,16 @@ export function hideModal(id) {
 
     Modal.getOrCreateInstance(element).hide();
 }
+
+export function addOutsideClickListener(root, dotNetRef, methodName) {
+    const handler = (event) => {
+        if (root && !root.contains(event.target)) {
+            dotNetRef.invokeMethodAsync(methodName);
+        }
+    };
+
+    document.addEventListener('click', handler);
+    return {
+        dispose: () => document.removeEventListener('click', handler)
+    };
+}

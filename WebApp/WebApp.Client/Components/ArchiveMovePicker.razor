@@ -5,7 +5,7 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5" id="@ModalLabelId">Move @MovingItem.Name</h1>
+                <h1 class="modal-title fs-5" id="@ModalLabelId">@(TitleOverride ?? $"Move {MovingItem.Name}")</h1>
                 <button type="button" class="btn-close" aria-label="Close" disabled="@OperationPending" @onclick="Cancel"></button>
             </div>
             <div class="modal-body">
@@ -93,6 +93,7 @@
     ];
 
     [Parameter, EditorRequired] public ArchiveItemDto MovingItem { get; set; } = null!;
+    [Parameter] public string? TitleOverride { get; set; }
     [Parameter, EditorRequired] public string SourceCategory { get; set; } = string.Empty;
     [Parameter] public IReadOnlyList<ArchiveBreadcrumbDto> SourceBreadcrumbs { get; set; } = [];
     [Parameter] public bool OperationPending { get; set; }

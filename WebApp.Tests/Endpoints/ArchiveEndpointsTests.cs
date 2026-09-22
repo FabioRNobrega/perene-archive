@@ -539,6 +539,58 @@ public sealed class ArchiveEndpointsTests
     }
 
     [Fact]
+    public async Task BatchMove_endpoint_enqueues_one_combined_job_that_relocates_every_selected_item()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "b.txt"), "b");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+        var ids = listing.Items.Select(item => item.Id).ToList();
+
+        using var response = await client.PatchAsJsonAsync(
+            "/api/archive/downloads/items/location", new BatchMoveArchiveItemsRequest(ids, "videos", null));
+        var job = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(ArchiveMutationKind.BatchMove, job!.Kind);
+        Assert.Equal(2, job.TotalItems);
+
+        var completed = await PollUntilTerminalAsync(client, job.JobId);
+        Assert.Equal(ArchiveMutationJobState.Completed, completed.State);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Videos", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Videos", "b.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "a.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "b.txt")));
+    }
+
+    [Fact]
+    public async Task BatchMove_endpoint_rejects_the_whole_batch_on_a_name_conflict_and_enqueues_nothing()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "b.txt"), "b");
+        Directory.CreateDirectory(Path.Combine(root.Path, "Videos"));
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Videos", "b.txt"), "existing");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+        var ids = listing.Items.Select(item => item.Id).ToList();
+
+        using var response = await client.PatchAsJsonAsync(
+            "/api/archive/downloads/items/location", new BatchMoveArchiveItemsRequest(ids, "videos", null));
+        var json = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.DoesNotContain(root.Path, json);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Downloads", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Downloads", "b.txt")));
+        var jobs = await client.GetFromJsonAsync<List<ArchiveMutationJobDto>>("/api/archive/jobs");
+        Assert.Empty(jobs!);
+    }
+
+    [Fact]
     public async Task EmptyTrash_permanently_deletes_items_in_trash_root()
     {
         using var root = CreateArchive();

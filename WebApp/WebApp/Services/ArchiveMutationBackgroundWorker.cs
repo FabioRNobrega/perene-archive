@@ -36,6 +36,8 @@ internal sealed class ArchiveMutationBackgroundWorker(
                         await executor.MoveToTrashAsync(job, processed => statusStore.ReportProgress(job.JobId, processed), stoppingToken),
                     ArchiveMutationKind.EmptyTrash =>
                         await executor.EmptyTrashAsync(job, processed => statusStore.ReportProgress(job.JobId, processed), stoppingToken),
+                    ArchiveMutationKind.BatchMove =>
+                        await executor.BatchMoveAsync(job, processed => statusStore.ReportProgress(job.JobId, processed), stoppingToken),
                     _ => ArchiveMutationResult.Failed("Unsupported archive mutation kind.")
                 };
 

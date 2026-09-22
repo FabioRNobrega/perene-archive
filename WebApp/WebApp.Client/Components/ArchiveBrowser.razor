@@ -6,9 +6,9 @@
 @inject PersistentPlayerState PlayerState
 @inject NavigationManager Navigation
 @inject ILogger<ArchiveBrowser> Logger
-@implements IDisposable
+@implements IAsyncDisposable
 
-<section class="card overflow-hidden" aria-labelledby="@HeadingId">
+<section class="card overflow-hidden" aria-labelledby="@HeadingId" @ref="_rootElement">
     <div class="card-header d-flex align-items-center justify-content-between gap-3 flex-wrap">
         <nav id="@HeadingId" aria-label="breadcrumb">
             <ol class="breadcrumb mb-0">
@@ -133,6 +133,26 @@
             </button>
         }
     </div>
+
+    @if (_selectedForMoveIds.Count > 0)
+    {
+        <div class="d-flex align-items-center gap-2 border-bottom p-2" role="toolbar" aria-label="Selected items">
+            <strong>@_selectedForMoveIds.Count selected</strong>
+            <button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
+                    type="button"
+                    disabled="@(_activeJob is not null)"
+                    @onclick="StartBatchMove">
+                <i class="bi bi-folder-symlink" aria-hidden="true"></i>
+                Move
+            </button>
+            <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+                    type="button"
+                    @onclick="ClearSelection">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                Clear selection
+            </button>
+        </div>
+    }
 
     @if (_uploads.Count > 0)
     {
@@ -271,8 +291,9 @@
             @foreach (var item in _filteredItems)
             {
                 var selected = IsSelected(item);
+                var multiSelected = _selectedForMoveIds.Contains(item.Id);
                 <div class="col">
-                    <div class="card h-100 position-relative overflow-hidden @(selected ? "border-primary border-2" : null)"
+                    <div class="card h-100 position-relative overflow-hidden @(selected ? "border-primary border-2" : (multiSelected ? "border-success border-2" : null))"
                          @onmouseenter="() => StartPreview(item)"
                          @onmouseleave="ClearPreview"
                          @onkeydown="HandleCardKeyDown">
@@ -356,7 +377,7 @@
                         <button class="@CardButtonCssClass(item)"
                                 type="button"
                                 aria-pressed="@((item.IsVideo || item.IsMusic) ? selected : null)"
-                                @onclick="() => ActivateAsync(item)">
+                                @onclick="(MouseEventArgs args) => HandleCardClick(item, args)">
                             @if (item.IsMusic)
                             {
                                 <span class="archive-cover-tile ratio ratio-1x1 bg-body-tertiary w-100" aria-hidden="true">
@@ -635,11 +656,12 @@
 @if (_moving is not null)
 {
     <ArchiveMovePicker MovingItem="_moving"
+                        TitleOverride="@(_isBatchMove ? $"Move {_selectedForMoveIds.Count} items" : null)"
                         SourceCategory="@Category"
                         SourceBreadcrumbs="_listing?.Breadcrumbs ?? []"
                         OperationPending="_operationPending"
                         OnCancel="CancelDialogs"
-                        OnConfirm="MoveAsync" />
+                        OnConfirm="ConfirmMoveAsync" />
 }
 
 @if (_renaming is not null)
@@ -768,6 +790,12 @@
     private bool _isLoading = true;
     private bool _operationPending;
     private string _filterText = string.Empty;
+    private readonly HashSet<string> _selectedForMoveIds = new(StringComparer.Ordinal);
+    private string? _selectionAnchorId;
+    private bool _isBatchMove;
+    private ElementReference _rootElement;
+    private DotNetObjectReference<ArchiveBrowser>? _outsideClickReference;
+    private IJSObjectReference? _outsideClickWatcher;
 
     private IReadOnlyList<ArchiveItemDto> _filteredItems =>
         string.IsNullOrWhiteSpace(_filterText)
@@ -813,6 +841,9 @@
         try
         {
             _bootstrapModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/bootstrapInterop.js");
+            _outsideClickReference = DotNetObjectReference.Create(this);
+            _outsideClickWatcher = await _bootstrapModule.InvokeAsync<IJSObjectReference>(
+                "addOutsideClickListener", _rootElement, _outsideClickReference, nameof(HandleOutsideClickAsync));
         }
         catch (JSException)
         {
@@ -839,6 +870,7 @@
         if (showLoading)
         {
             _filterText = string.Empty;
+            ClearSelection();
         }
         try
         {
@@ -1649,9 +1681,119 @@
     private void StartMove(ArchiveItemDto item)
     {
         _moving = item;
+        _isBatchMove = false;
         _renaming = null;
         _confirmingEmptyTrash = false;
     }
+
+    private void StartBatchMove()
+    {
+        var first = _filteredItems.FirstOrDefault(item => _selectedForMoveIds.Contains(item.Id))
+            ?? _listing?.Items.FirstOrDefault(item => _selectedForMoveIds.Contains(item.Id));
+        if (first is null)
+        {
+            return;
+        }
+
+        _moving = first;
+        _isBatchMove = true;
+        _renaming = null;
+        _confirmingEmptyTrash = false;
+    }
+
+    private async Task HandleCardClick(ArchiveItemDto item, MouseEventArgs args)
+    {
+        if (args.ShiftKey)
+        {
+            ApplyShiftSelection(item);
+            return;
+        }
+
+        if (args.CtrlKey)
+        {
+            ApplyCtrlSelection(item);
+            return;
+        }
+
+        await ActivateAsync(item);
+    }
+
+    private void ApplyCtrlSelection(ArchiveItemDto item)
+    {
+        if (!_selectedForMoveIds.Remove(item.Id))
+        {
+            _selectedForMoveIds.Add(item.Id);
+        }
+
+        _selectionAnchorId = item.Id;
+    }
+
+    private void ApplyShiftSelection(ArchiveItemDto item)
+    {
+        if (_selectionAnchorId is null)
+        {
+            ApplyCtrlSelection(item);
+            return;
+        }
+
+        var items = _filteredItems;
+        var anchorIndex = -1;
+        var clickedIndex = -1;
+        for (var index = 0; index < items.Count; index++)
+        {
+            if (string.Equals(items[index].Id, _selectionAnchorId, StringComparison.Ordinal))
+            {
+                anchorIndex = index;
+            }
+
+            if (string.Equals(items[index].Id, item.Id, StringComparison.Ordinal))
+            {
+                clickedIndex = index;
+            }
+        }
+
+        if (anchorIndex < 0 || clickedIndex < 0)
+        {
+            ApplyCtrlSelection(item);
+            return;
+        }
+
+        var start = Math.Min(anchorIndex, clickedIndex);
+        var end = Math.Max(anchorIndex, clickedIndex);
+        _selectedForMoveIds.Clear();
+        foreach (var candidate in items.Skip(start).Take(end - start + 1))
+        {
+            _selectedForMoveIds.Add(candidate.Id);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedForMoveIds.Clear();
+        _selectionAnchorId = null;
+    }
+
+    [JSInvokable]
+    public async Task HandleOutsideClickAsync()
+    {
+        if (_selectedForMoveIds.Count == 0 || HasOpenOverlay)
+        {
+            return;
+        }
+
+        ClearSelection();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private bool HasOpenOverlay =>
+        _moving is not null ||
+        _renaming is not null ||
+        _confirmingEmptyTrash ||
+        _conversionQueued ||
+        _conversionPlan is not null ||
+        _activeJob is not null ||
+        _imageViewerStartId is not null ||
+        _comicViewerItemId is not null;
 
     private void StartEmptyTrash()
     {
@@ -1674,6 +1816,18 @@
         CancelDialogs();
     }
 
+    private async Task ConfirmMoveAsync((string DestinationCategory, string? DestinationFolderId) destination)
+    {
+        if (_isBatchMove)
+        {
+            await BatchMoveAsync(destination);
+        }
+        else
+        {
+            await MoveAsync(destination);
+        }
+    }
+
     private async Task MoveAsync((string DestinationCategory, string? DestinationFolderId) destination)
     {
         if (_moving is null)
@@ -1685,6 +1839,21 @@
         await EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
             $"api/archive/{Category}/items/{Uri.EscapeDataString(id)}/location",
             new MoveArchiveItemRequest(destination.DestinationCategory, destination.DestinationFolderId)));
+        CancelDialogs();
+    }
+
+    private async Task BatchMoveAsync((string DestinationCategory, string? DestinationFolderId) destination)
+    {
+        var ids = _selectedForMoveIds.ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
+            $"api/archive/{Category}/items/location",
+            new BatchMoveArchiveItemsRequest(ids, destination.DestinationCategory, destination.DestinationFolderId)));
+        ClearSelection();
         CancelDialogs();
     }
 
@@ -1784,6 +1953,7 @@
     {
         ArchiveMutationKind.MoveToTrash => "Moving to Trash:",
         ArchiveMutationKind.EmptyTrash => "Emptying",
+        ArchiveMutationKind.BatchMove => "Moving",
         _ => "Moving"
     };
 
@@ -1888,6 +2058,7 @@
     {
         _renaming = null;
         _moving = null;
+        _isBatchMove = false;
         _confirmingEmptyTrash = false;
         _renameName = string.Empty;
     }
@@ -2028,13 +2199,27 @@
             : path;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         PlayerState.StateChanged -= HandlePlayerStateChanged;
         _mediaPollingCts?.Cancel();
         _mediaPollingCts?.Dispose();
         _jobPollingCts?.Cancel();
         _jobPollingCts?.Dispose();
+
+        if (_outsideClickWatcher is not null)
+        {
+            try
+            {
+                await _outsideClickWatcher.InvokeVoidAsync("dispose");
+                await _outsideClickWatcher.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        _outsideClickReference?.Dispose();
     }
 
     private void RestartMediaPollingIfNeeded()

@@ -51,6 +51,7 @@ internal static class ArchiveEndpoints
         endpoints.MapDelete("/api/archive/{category}/uploads/{uploadId}", CancelUploadAsync);
         endpoints.MapPatch("/api/archive/{category}/items/{id}/name", Rename);
         endpoints.MapPatch("/api/archive/{category}/items/{id}/location", Move);
+        endpoints.MapPatch("/api/archive/{category}/items/location", BatchMove);
         endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash);
         endpoints.MapDelete("/api/archive/{category}/items", EmptyTrash);
         endpoints.MapGet("/api/archive/jobs", GetJobs);
@@ -337,6 +338,14 @@ internal static class ArchiveEndpoints
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(() => archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId), queue, statuses);
+
+    private static IResult BatchMove(
+        string category,
+        BatchMoveArchiveItemsRequest request,
+        IArchiveService archive,
+        IArchiveMutationJobQueue queue,
+        IArchiveMutationJobStatusStore statuses) =>
+        EnqueueMutation(() => archive.BatchMove(category, request.ItemIds, request.DestinationCategory, request.DestinationFolderId), queue, statuses);
 
     private static IResult MoveToTrash(
         string category,

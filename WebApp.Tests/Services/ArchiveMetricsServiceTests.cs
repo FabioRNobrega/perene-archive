@@ -90,6 +90,7 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveListing PublishUploadedFile(string categoryKey, string? parentId, string fileName, string sourceTempPath) => throw new NotSupportedException();
         public ArchiveListing Rename(string categoryKey, string itemId, string name) => throw new NotSupportedException();
         public ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
+        public ArchiveMutationJob BatchMove(string categoryKey, IReadOnlyList<string> itemIds, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveMutationJob MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
         public ArchiveMutationJob EmptyTrash(string categoryKey) => throw new NotSupportedException();
         public bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();

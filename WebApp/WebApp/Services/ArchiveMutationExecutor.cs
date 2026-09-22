@@ -39,6 +39,54 @@ internal sealed class ArchiveMutationExecutor : IArchiveMutationExecutor
         }
     }
 
+    public Task<ArchiveMutationResult> BatchMoveAsync(ArchiveMutationJob job, Action<int> reportProgress, CancellationToken cancellationToken)
+    {
+        var entries = job.BatchEntries ?? [];
+        var processed = 0;
+        void ReportFileMoved()
+        {
+            processed++;
+            reportProgress(processed);
+        }
+
+        try
+        {
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (PathsAreEqual(entry.SourcePath, entry.DestinationPath))
+                {
+                    for (var index = 0; index < entry.FileCount; index++)
+                    {
+                        ReportFileMoved();
+                    }
+
+                    continue;
+                }
+
+                if (entry.IsFolder)
+                {
+                    MoveFolderRecursive(entry.SourcePath, entry.DestinationPath, cancellationToken, ReportFileMoved);
+                    Directory.Delete(entry.SourcePath, recursive: false);
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(entry.DestinationPath)!);
+                    File.Move(entry.SourcePath, entry.DestinationPath);
+                    ReportFileMoved();
+                }
+            }
+
+            return Task.FromResult(ArchiveMutationResult.Success);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Task.FromResult(ArchiveMutationResult.Failed(
+                $"The batch move stopped after moving {processed} of {job.TotalItems} item(s). Already-moved items were not rolled back."));
+        }
+    }
+
     private static Task<ArchiveMutationResult> MoveEntryAsync(ArchiveMutationJob job, Action<int> reportProgress, CancellationToken cancellationToken)
     {
         if (job.DestinationPath is null)

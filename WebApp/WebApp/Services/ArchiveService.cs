@@ -184,10 +184,53 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         EnsureNotCategoryRoot(item);
         var destinationCategory = ResolveCategory(destinationCategoryKey);
         var destinationFolder = ResolveFolder(destinationCategory, destinationFolderId);
+        var destination = ValidateMoveDestination(item, destinationCategory, destinationFolder);
+        return CreateMutationJob(ArchiveMutationKind.Move, item, destination);
+    }
+
+    public ArchiveMutationJob BatchMove(string categoryKey, IReadOnlyList<string> itemIds, string destinationCategoryKey, string? destinationFolderId)
+    {
+        if (itemIds is not { Count: > 0 })
+        {
+            throw new ArchiveValidationException("At least one item must be selected to move.");
+        }
+
+        var category = ResolveCategory(categoryKey);
+        var destinationCategory = ResolveCategory(destinationCategoryKey);
+        var destinationFolder = ResolveFolder(destinationCategory, destinationFolderId);
+
+        var batchEntries = new List<ArchiveMutationBatchEntry>(itemIds.Count);
+        foreach (var itemId in itemIds)
+        {
+            var item = ResolveItem(category, itemId);
+            EnsureNotCategoryRoot(item);
+            var destination = ValidateMoveDestination(item, destinationCategory, destinationFolder);
+            var isFolder = item.Kind == ArchiveItemKind.Folder;
+            batchEntries.Add(new ArchiveMutationBatchEntry(
+                item.PhysicalPath,
+                destination,
+                isFolder,
+                isFolder ? CountFiles(item.PhysicalPath) : 1));
+        }
+
+        var totalItems = batchEntries.Sum(entry => entry.FileCount);
+        return new ArchiveMutationJob(
+            Guid.NewGuid().ToString("N"),
+            ArchiveMutationKind.BatchMove,
+            destinationFolder.PhysicalPath,
+            destinationFolder.PhysicalPath,
+            IsFolder: true,
+            TotalItems: totalItems,
+            Label: $"{itemIds.Count} item{(itemIds.Count == 1 ? string.Empty : "s")}",
+            BatchEntries: batchEntries);
+    }
+
+    private string ValidateMoveDestination(ArchiveItemEntry item, ArchiveCategory destinationCategory, ArchiveItemEntry destinationFolder)
+    {
         var destination = ContainedPath(destinationCategory, Path.Combine(destinationFolder.PhysicalPath, item.Name));
         if (IsSamePath(item.PhysicalPath, destination))
         {
-            return CreateMutationJob(ArchiveMutationKind.Move, item, destination);
+            return destination;
         }
 
         if (Exists(destination))
@@ -200,7 +243,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
             throw new ArchiveValidationException("A folder cannot be moved into itself.");
         }
 
-        return CreateMutationJob(ArchiveMutationKind.Move, item, destination);
+        return destination;
     }
 
     public ArchiveMutationJob MoveToTrash(string categoryKey, string itemId)

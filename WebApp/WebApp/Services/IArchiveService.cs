@@ -35,6 +35,13 @@ internal interface IArchiveService
     /// </summary>
     ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId);
 
+    /// <summary>
+    /// Validates every requested item exactly as <see cref="Move"/> does, all-or-nothing, before
+    /// returning a single job descriptor whose <c>BatchEntries</c> the caller enqueues as one
+    /// combined-progress <see cref="ArchiveMutationKind.BatchMove"/> job.
+    /// </summary>
+    ArchiveMutationJob BatchMove(string categoryKey, IReadOnlyList<string> itemIds, string destinationCategoryKey, string? destinationFolderId);
+
     ArchiveMutationJob MoveToTrash(string categoryKey, string itemId);
 
     ArchiveMutationJob EmptyTrash(string categoryKey);

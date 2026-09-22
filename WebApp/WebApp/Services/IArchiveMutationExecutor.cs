@@ -28,4 +28,10 @@ internal interface IArchiveMutationExecutor
     Task<ArchiveMutationResult> MoveToTrashAsync(ArchiveMutationJob job, Action<int> reportProgress, CancellationToken cancellationToken);
 
     Task<ArchiveMutationResult> EmptyTrashAsync(ArchiveMutationJob job, Action<int> reportProgress, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Moves every entry in <see cref="ArchiveMutationJob.BatchEntries"/> in order, reporting a
+    /// running total across the whole batch (not reset per entry). Stops at the first failing entry.
+    /// </summary>
+    Task<ArchiveMutationResult> BatchMoveAsync(ArchiveMutationJob job, Action<int> reportProgress, CancellationToken cancellationToken);
 }

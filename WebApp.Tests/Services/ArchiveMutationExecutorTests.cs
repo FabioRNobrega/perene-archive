@@ -84,6 +84,67 @@ public sealed class ArchiveMutationExecutorTests
     }
 
     [Fact]
+    public async Task BatchMoveAsync_moves_every_entry_and_reports_a_running_total_across_the_whole_batch()
+    {
+        using var root = new TemporaryDirectory();
+        var fileSource = Path.Combine(root.Path, "a.txt");
+        await File.WriteAllTextAsync(fileSource, "a");
+        var folderSource = Path.Combine(root.Path, "Folder");
+        Directory.CreateDirectory(folderSource);
+        await File.WriteAllTextAsync(Path.Combine(folderSource, "b.txt"), "b");
+        await File.WriteAllTextAsync(Path.Combine(folderSource, "c.txt"), "c");
+        var fileDestination = Path.Combine(root.Path, "Target", "a.txt");
+        var folderDestination = Path.Combine(root.Path, "Target", "Folder");
+        var batchEntries = new List<ArchiveMutationBatchEntry>
+        {
+            new(fileSource, fileDestination, IsFolder: false, FileCount: 1),
+            new(folderSource, folderDestination, IsFolder: true, FileCount: 2),
+        };
+        var job = new ArchiveMutationJob("job", ArchiveMutationKind.BatchMove, root.Path, root.Path, IsFolder: true, TotalItems: 3, Label: "2 items", BatchEntries: batchEntries);
+        var progress = new List<int>();
+        var executor = new ArchiveMutationExecutor();
+
+        var result = await executor.BatchMoveAsync(job, progress.Add, CancellationToken.None);
+
+        Assert.Equal(ArchiveMutationOutcome.Success, result.Outcome);
+        Assert.Equal([1, 2, 3], progress);
+        Assert.False(File.Exists(fileSource));
+        Assert.False(Directory.Exists(folderSource));
+        Assert.True(File.Exists(fileDestination));
+        Assert.True(File.Exists(Path.Combine(folderDestination, "b.txt")));
+        Assert.True(File.Exists(Path.Combine(folderDestination, "c.txt")));
+    }
+
+    [Fact]
+    public async Task BatchMoveAsync_stops_at_the_first_failing_entry_and_reports_the_partial_count()
+    {
+        using var root = new TemporaryDirectory();
+        var firstSource = Path.Combine(root.Path, "first.txt");
+        await File.WriteAllTextAsync(firstSource, "1");
+        var secondSource = Path.Combine(root.Path, "missing.txt");
+        var thirdSource = Path.Combine(root.Path, "third.txt");
+        await File.WriteAllTextAsync(thirdSource, "3");
+        var batchEntries = new List<ArchiveMutationBatchEntry>
+        {
+            new(firstSource, Path.Combine(root.Path, "Target", "first.txt"), IsFolder: false, FileCount: 1),
+            new(secondSource, Path.Combine(root.Path, "Target", "missing.txt"), IsFolder: false, FileCount: 1),
+            new(thirdSource, Path.Combine(root.Path, "Target", "third.txt"), IsFolder: false, FileCount: 1),
+        };
+        var job = new ArchiveMutationJob("job", ArchiveMutationKind.BatchMove, root.Path, root.Path, IsFolder: true, TotalItems: 3, Label: "3 items", BatchEntries: batchEntries);
+        var progress = new List<int>();
+        var executor = new ArchiveMutationExecutor();
+
+        var result = await executor.BatchMoveAsync(job, progress.Add, CancellationToken.None);
+
+        Assert.Equal(ArchiveMutationOutcome.Failed, result.Outcome);
+        Assert.Contains("1 of 3", result.Diagnostic);
+        Assert.Equal([1], progress);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Target", "first.txt")));
+        Assert.True(File.Exists(thirdSource));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Target", "third.txt")));
+    }
+
+    [Fact]
     public async Task MoveAsync_without_a_destination_fails_without_reporting_progress()
     {
         using var root = new TemporaryDirectory();
