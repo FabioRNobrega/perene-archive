@@ -1,3 +1,4 @@
+using WebApp.Client.Models;
 using WebApp.Models;
 
 namespace WebApp.Services;
@@ -83,7 +84,7 @@ internal sealed class ArchiveMutationExecutor : IArchiveMutationExecutor
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return Task.FromResult(ArchiveMutationResult.Failed(
-                $"The batch move stopped after moving {processed} of {job.TotalItems} item(s). Already-moved items were not rolled back."));
+                $"The batch move{(job.Kind == ArchiveMutationKind.BatchMoveToTrash ? " to Trash" : string.Empty)} stopped after moving {processed} of {job.TotalItems} item(s). Already-moved items were not rolled back."));
         }
     }
 

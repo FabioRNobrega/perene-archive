@@ -566,6 +566,53 @@ public sealed class ArchiveEndpointsTests
     }
 
     [Fact]
+    public async Task BatchMoveToTrash_endpoint_enqueues_one_job_that_trashes_every_selected_item()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "a.txt"), "a");
+        Directory.CreateDirectory(Path.Combine(root.Path, "Downloads", "Folder"));
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Downloads", "Folder", "b.txt"), "b");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var listing = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/downloads/items"))!;
+        var ids = listing.Items.Select(item => item.Id).ToList();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/archive/downloads/items/trash", new BatchMoveToTrashArchiveItemsRequest(ids));
+        var job = await response.Content.ReadFromJsonAsync<ArchiveMutationJobDto>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(ArchiveMutationKind.BatchMoveToTrash, job!.Kind);
+        Assert.Equal(2, job.TotalItems);
+
+        var completed = await PollUntilTerminalAsync(client, job.JobId);
+        Assert.Equal(ArchiveMutationJobState.Completed, completed.State);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "Folder", "b.txt")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Downloads", "a.txt")));
+        Assert.False(Directory.Exists(Path.Combine(root.Path, "Downloads", "Folder")));
+    }
+
+    [Fact]
+    public async Task BatchMoveToTrash_endpoint_rejects_empty_lists_and_the_trash_category()
+    {
+        using var root = CreateArchive();
+        await File.WriteAllTextAsync(Path.Combine(root.Path, "Trash", "t.txt"), "t");
+        using var factory = new VideoManagerFactory(root.Path);
+        using var client = factory.CreateClient();
+        var trash = (await client.GetFromJsonAsync<ArchiveListingDto>("/api/archive/trash/items"))!;
+
+        using var empty = await client.PostAsJsonAsync(
+            "/api/archive/downloads/items/trash", new BatchMoveToTrashArchiveItemsRequest([]));
+        using var forbidden = await client.PostAsJsonAsync(
+            "/api/archive/trash/items/trash", new BatchMoveToTrashArchiveItemsRequest([trash.Items[0].Id]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "t.txt")));
+    }
+
+    [Fact]
     public async Task BatchMove_endpoint_rejects_the_whole_batch_on_a_name_conflict_and_enqueues_nothing()
     {
         using var root = CreateArchive();

@@ -44,6 +44,13 @@ internal interface IArchiveService
 
     ArchiveMutationJob MoveToTrash(string categoryKey, string itemId);
 
+    /// <summary>
+    /// Validates every requested item exactly as <see cref="MoveToTrash"/> does, all-or-nothing, before
+    /// returning a single <see cref="ArchiveMutationKind.BatchMoveToTrash"/> job descriptor whose
+    /// <c>BatchEntries</c> the caller enqueues with combined progress.
+    /// </summary>
+    ArchiveMutationJob BatchMoveToTrash(string categoryKey, IReadOnlyList<string> itemIds);
+
     ArchiveMutationJob EmptyTrash(string categoryKey);
 
     bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item);

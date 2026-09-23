@@ -418,6 +418,44 @@ public sealed class ArchiveServiceTests
     }
 
     [Fact]
+    public void BatchMoveToTrash_plans_unique_trash_destinations_and_counts_files_without_touching_the_filesystem()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        Directory.CreateDirectory(Path.Combine(root.Path, "Documents", "Folder"));
+        awaitFile(Path.Combine(root.Path, "Documents", "Folder", "b.txt"));
+        awaitFile(Path.Combine(root.Path, "Trash", "a.txt"));
+        var service = CreateService(root.Path);
+        var items = service.List("documents", null).Items;
+
+        var job = service.BatchMoveToTrash("documents", items.Select(item => item.Id).ToList());
+
+        Assert.Equal(ArchiveMutationKind.BatchMoveToTrash, job.Kind);
+        Assert.Equal(2, job.TotalItems);
+        Assert.Equal("2 items", job.Label);
+        Assert.Equal(2, job.BatchEntries!.Count);
+        Assert.Equal(2, job.BatchEntries.Select(entry => entry.DestinationPath).Distinct().Count());
+        Assert.All(job.BatchEntries, entry => Assert.Equal(Path.Combine(root.Path, "Trash"), Path.GetDirectoryName(entry.DestinationPath)));
+        Assert.DoesNotContain(job.BatchEntries, entry => entry.DestinationPath == Path.Combine(root.Path, "Trash", "a.txt"));
+        Assert.True(File.Exists(Path.Combine(root.Path, "Documents", "a.txt")));
+    }
+
+    [Fact]
+    public void BatchMoveToTrash_rejects_empty_lists_the_trash_category_and_unknown_ids()
+    {
+        using var root = CreateArchive();
+        awaitFile(Path.Combine(root.Path, "Documents", "a.txt"));
+        awaitFile(Path.Combine(root.Path, "Trash", "t.txt"));
+        var service = CreateService(root.Path);
+        var file = service.List("documents", null).Items.Single();
+        var trashed = service.List("trash", null).Items.Single();
+
+        Assert.Throws<ArchiveValidationException>(() => service.BatchMoveToTrash("documents", []));
+        Assert.Throws<ArchiveForbiddenException>(() => service.BatchMoveToTrash("trash", [trashed.Id]));
+        Assert.Throws<ArchiveNotFoundException>(() => service.BatchMoveToTrash("documents", [file.Id, "missing"]));
+    }
+
+    [Fact]
     public void EmptyTrash_returns_a_job_counting_files_recursively_without_touching_the_filesystem()
     {
         using var root = CreateArchive();

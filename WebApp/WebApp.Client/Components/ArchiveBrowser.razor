@@ -172,6 +172,16 @@
                 <i class="bi bi-folder-symlink" aria-hidden="true"></i>
                 Move
             </button>
+            @if (Category != "trash")
+            {
+                <button class="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-1"
+                        type="button"
+                        disabled="@(_activeJob is not null)"
+                        @onclick="StartBatchTrash">
+                    <i class="bi bi-trash3" aria-hidden="true"></i>
+                    Move to Trash
+                </button>
+            }
             <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
                     type="button"
                     @onclick="ClearSelection">
@@ -752,6 +762,28 @@
     <div class="modal-backdrop fade show"></div>
 }
 
+@if (_confirmingBatchTrash)
+{
+    <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@BatchTrashModalLabelId" aria-modal="true" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="@BatchTrashModalLabelId">Move to Trash</h1>
+                    <button type="button" class="btn-close" aria-label="Close" disabled="@_operationPending" @onclick="CancelDialogs"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">Move @_selectedForMoveIds.Count selected item@(_selectedForMoveIds.Count == 1 ? string.Empty : "s") to Trash?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" disabled="@_operationPending" @onclick="CancelDialogs">Cancel</button>
+                    <button class="btn btn-danger" type="button" disabled="@_operationPending" @onclick="BatchTrashAsync">Move to Trash</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
 @if (_confirmingEmptyTrash)
 {
     <div class="modal fade show d-block" tabindex="-1" aria-labelledby="@EmptyTrashModalLabelId" aria-modal="true" role="dialog">
@@ -839,6 +871,7 @@
     private ArchiveItemDto? _renaming;
     private ArchiveItemDto? _moving;
     private bool _confirmingEmptyTrash;
+    private bool _confirmingBatchTrash;
     private bool _conversionQueued;
     private ArchiveItemDto? _conversionItem;
     private VideoConversionPlanDto? _conversionPlan;
@@ -890,6 +923,7 @@
     private string CreateFileModalLabelId => $"archive-{Category}-create-file-modal-label";
     private string CreateFileInputId => $"archive-{Category}-create-file";
     private string RenameModalLabelId => $"archive-{Category}-rename-modal-label";
+    private string BatchTrashModalLabelId => $"archive-{Category}-batch-trash-modal-label";
     private string EmptyTrashModalLabelId => $"archive-{Category}-empty-trash-modal-label";
     private string JobProgressModalLabelId => $"archive-{Category}-job-progress-modal-label";
     private string ConversionQueuedModalLabelId => $"archive-{Category}-conversion-queued-modal-label";
@@ -1893,6 +1927,7 @@
         _renameName = item.Name;
         _moving = null;
         _confirmingEmptyTrash = false;
+        _confirmingBatchTrash = false;
     }
 
     private void StartMove(ArchiveItemDto item)
@@ -1901,6 +1936,7 @@
         _isBatchMove = false;
         _renaming = null;
         _confirmingEmptyTrash = false;
+        _confirmingBatchTrash = false;
     }
 
     private void StartBatchMove()
@@ -1916,6 +1952,7 @@
         _isBatchMove = true;
         _renaming = null;
         _confirmingEmptyTrash = false;
+        _confirmingBatchTrash = false;
     }
 
     private async Task HandleCardClick(ArchiveItemDto item, MouseEventArgs args)
@@ -2006,6 +2043,7 @@
         _moving is not null ||
         _renaming is not null ||
         _confirmingEmptyTrash ||
+        _confirmingBatchTrash ||
         _conversionQueued ||
         _conversionPlan is not null ||
         _activeJob is not null ||
@@ -2015,6 +2053,7 @@
     private void StartEmptyTrash()
     {
         _confirmingEmptyTrash = true;
+        _confirmingBatchTrash = false;
         _renaming = null;
         _moving = null;
     }
@@ -2070,6 +2109,35 @@
         await EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
             $"api/archive/{Category}/items/location",
             new BatchMoveArchiveItemsRequest(ids, destination.DestinationCategory, destination.DestinationFolderId)));
+        ClearSelection();
+        CancelDialogs();
+    }
+
+    private void StartBatchTrash()
+    {
+        if (_selectedForMoveIds.Count == 0 || Category == "trash")
+        {
+            return;
+        }
+
+        _confirmingBatchTrash = true;
+        _confirmingEmptyTrash = false;
+        _renaming = null;
+        _moving = null;
+        _isBatchMove = false;
+    }
+
+    private async Task BatchTrashAsync()
+    {
+        var ids = _selectedForMoveIds.ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await EnqueueMutationAsync(() => Http.PostAsJsonAsync(
+            $"api/archive/{Category}/items/trash",
+            new BatchMoveToTrashArchiveItemsRequest(ids)));
         ClearSelection();
         CancelDialogs();
     }
@@ -2171,6 +2239,7 @@
         ArchiveMutationKind.MoveToTrash => "Moving to Trash:",
         ArchiveMutationKind.EmptyTrash => "Emptying",
         ArchiveMutationKind.BatchMove => "Moving",
+        ArchiveMutationKind.BatchMoveToTrash => "Moving to Trash:",
         _ => "Moving"
     };
 
@@ -2277,6 +2346,7 @@
         _moving = null;
         _isBatchMove = false;
         _confirmingEmptyTrash = false;
+        _confirmingBatchTrash = false;
         _renameName = string.Empty;
     }
 

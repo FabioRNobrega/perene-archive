@@ -3,7 +3,7 @@ using WebApp.Client.Models;
 namespace WebApp.Models;
 
 /// <summary>
-/// Server-only descriptor for a queued Move/MoveToTrash/EmptyTrash/BatchMove job. <see cref="DestinationPath"/> is
+/// Server-only descriptor for a queued Move/MoveToTrash/EmptyTrash/BatchMove/BatchMoveToTrash job. <see cref="DestinationPath"/> is
 /// null only for <see cref="ArchiveMutationKind.EmptyTrash"/>. Never serialized to the browser.
 /// </summary>
 internal sealed record ArchiveMutationJob(

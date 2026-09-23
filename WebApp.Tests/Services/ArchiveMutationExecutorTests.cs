@@ -145,6 +145,28 @@ public sealed class ArchiveMutationExecutorTests
     }
 
     [Fact]
+    public async Task BatchMoveAsync_for_a_trash_batch_names_Trash_in_the_failure_diagnostic()
+    {
+        using var root = new TemporaryDirectory();
+        var firstSource = Path.Combine(root.Path, "first.txt");
+        await File.WriteAllTextAsync(firstSource, "1");
+        var batchEntries = new List<ArchiveMutationBatchEntry>
+        {
+            new(firstSource, Path.Combine(root.Path, "Trash", "first.txt"), IsFolder: false, FileCount: 1),
+            new(Path.Combine(root.Path, "missing.txt"), Path.Combine(root.Path, "Trash", "missing.txt"), IsFolder: false, FileCount: 1),
+        };
+        var job = new ArchiveMutationJob("job", ArchiveMutationKind.BatchMoveToTrash, root.Path, root.Path, IsFolder: true, TotalItems: 2, Label: "2 items", BatchEntries: batchEntries);
+        var executor = new ArchiveMutationExecutor();
+
+        var result = await executor.BatchMoveAsync(job, _ => { }, CancellationToken.None);
+
+        Assert.Equal(ArchiveMutationOutcome.Failed, result.Outcome);
+        Assert.Contains("to Trash", result.Diagnostic);
+        Assert.Contains("1 of 2", result.Diagnostic);
+        Assert.True(File.Exists(Path.Combine(root.Path, "Trash", "first.txt")));
+    }
+
+    [Fact]
     public async Task MoveAsync_without_a_destination_fails_without_reporting_progress()
     {
         using var root = new TemporaryDirectory();

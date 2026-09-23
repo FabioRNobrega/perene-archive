@@ -92,6 +92,7 @@ public sealed class ArchiveMetricsServiceTests
         public ArchiveMutationJob Move(string categoryKey, string itemId, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveMutationJob BatchMove(string categoryKey, IReadOnlyList<string> itemIds, string destinationCategoryKey, string? destinationFolderId) => throw new NotSupportedException();
         public ArchiveMutationJob MoveToTrash(string categoryKey, string itemId) => throw new NotSupportedException();
+        public ArchiveMutationJob BatchMoveToTrash(string categoryKey, IReadOnlyList<string> itemIds) => throw new NotSupportedException();
         public ArchiveMutationJob EmptyTrash(string categoryKey) => throw new NotSupportedException();
         public bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();
         public bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item) => throw new NotSupportedException();

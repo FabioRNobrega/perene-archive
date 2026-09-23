@@ -264,6 +264,52 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return CreateMutationJob(ArchiveMutationKind.MoveToTrash, item, destination);
     }
 
+    public ArchiveMutationJob BatchMoveToTrash(string categoryKey, IReadOnlyList<string> itemIds)
+    {
+        if (itemIds is not { Count: > 0 })
+        {
+            throw new ArchiveValidationException("At least one item must be selected to move to Trash.");
+        }
+
+        var category = ResolveCategory(categoryKey);
+        if (string.Equals(category.Key, "trash", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArchiveForbiddenException("Trash items cannot be deleted permanently.");
+        }
+
+        var trashRoot = GetCategoryRoot(ResolveCategory("trash"));
+        var chosen = new HashSet<string>(StringComparer.Ordinal);
+        var batchEntries = new List<ArchiveMutationBatchEntry>(itemIds.Count);
+        foreach (var itemId in itemIds.Distinct(StringComparer.Ordinal))
+        {
+            var item = ResolveItem(category, itemId);
+            EnsureNotCategoryRoot(item);
+
+            var destination = GetUniqueTrashPath(trashRoot, item.Name);
+            while (!chosen.Add(destination))
+            {
+                destination = GetUniqueTrashPath(trashRoot, $"{Path.GetFileNameWithoutExtension(destination)} x{Path.GetExtension(destination)}");
+            }
+
+            var isFolder = item.Kind == ArchiveItemKind.Folder;
+            batchEntries.Add(new ArchiveMutationBatchEntry(
+                item.PhysicalPath,
+                destination,
+                isFolder,
+                isFolder ? CountFiles(item.PhysicalPath) : 1));
+        }
+
+        return new ArchiveMutationJob(
+            Guid.NewGuid().ToString("N"),
+            ArchiveMutationKind.BatchMoveToTrash,
+            trashRoot,
+            trashRoot,
+            IsFolder: true,
+            TotalItems: batchEntries.Sum(entry => entry.FileCount),
+            Label: $"{batchEntries.Count} item{(batchEntries.Count == 1 ? string.Empty : "s")}",
+            BatchEntries: batchEntries);
+    }
+
     public ArchiveMutationJob EmptyTrash(string categoryKey)
     {
         var category = ResolveCategory(categoryKey);

@@ -5,5 +5,6 @@ public enum ArchiveMutationKind
     Move,
     MoveToTrash,
     EmptyTrash,
-    BatchMove
+    BatchMove,
+    BatchMoveToTrash
 }
