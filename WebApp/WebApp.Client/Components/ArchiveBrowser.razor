@@ -52,6 +52,32 @@
                               ValueChanged="OnFilterChanged"
                               Placeholder="Filter by name"
                               AriaLabel="Filter items by name" />
+            <div class="dropdown">
+                <button class="btn btn-secondary rounded-circle d-inline-flex align-items-center justify-content-center"
+                        style="width:44px;height:44px;"
+                        type="button"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        aria-label="Sort"
+                        title="Sort">
+                    <i class="bi bi-filter fs-4 lh-1" aria-hidden="true"></i>
+                </button>
+                <ul class="dropdown-menu">
+                    @foreach (var (option, label) in SortChoices)
+                    {
+                        var selected = _sortOption == option;
+                        <li>
+                            <button class="dropdown-item d-flex align-items-center @(selected ? "active" : null)"
+                                    type="button"
+                                    aria-pressed="@(selected ? "true" : "false")"
+                                    @onclick="() => SelectSortAsync(option)">
+                                <i class="bi @(selected ? "bi-check2" : null) me-2" style="width:1em;" aria-hidden="true"></i>
+                                @label
+                            </button>
+                        </li>
+                    }
+                </ul>
+            </div>
         }
         @if (_listing?.CanCreateFolder == true)
         {
@@ -840,10 +866,22 @@
     private DotNetObjectReference<ArchiveBrowser>? _outsideClickReference;
     private IJSObjectReference? _outsideClickWatcher;
 
+    private const string SortStorageKey = "archiveBrowser.sortOption";
+    private ArchiveSortOption _sortOption = ArchiveSortOption.Name;
+    private static readonly (ArchiveSortOption Option, string Label)[] SortChoices =
+    [
+        (ArchiveSortOption.Name, "Name (A-Z)"),
+        (ArchiveSortOption.NameDescending, "Name (Z-A)"),
+        (ArchiveSortOption.Size, "Size"),
+        (ArchiveSortOption.Date, "Date"),
+    ];
+
     private IReadOnlyList<ArchiveItemDto> _filteredItems =>
-        string.IsNullOrWhiteSpace(_filterText)
-            ? _listing?.Items ?? []
-            : (_listing?.Items ?? []).Where(item => item.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase)).ToList();
+        ArchiveItemSorter.Sort(
+            string.IsNullOrWhiteSpace(_filterText)
+                ? _listing?.Items ?? []
+                : (_listing?.Items ?? []).Where(item => item.Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase)),
+            _sortOption);
     private string HeadingId => $"archive-{Category}-heading";
     private string CreateModalId => $"archive-{Category}-create-modal";
     private string CreateModalLabelId => $"archive-{Category}-create-modal-label";
@@ -883,6 +921,20 @@
 
         try
         {
+            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", SortStorageKey);
+            if (Enum.TryParse<ArchiveSortOption>(stored, out var storedOption) && Enum.IsDefined(storedOption))
+            {
+                _sortOption = storedOption;
+                StateHasChanged();
+            }
+        }
+        catch (Exception exception) when (exception is JSException or InvalidOperationException)
+        {
+            // Storage unavailable; keep the default Name sort.
+        }
+
+        try
+        {
             _bootstrapModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/bootstrapInterop.js");
             _outsideClickReference = DotNetObjectReference.Create(this);
             _outsideClickWatcher = await _bootstrapModule.InvokeAsync<IJSObjectReference>(
@@ -901,6 +953,19 @@
         {
             // Uploads remain disabled (Resume/new uploads report an error) if JS interop import fails.
             Logger.LogWarning(exception, "Failed to import archiveUploadInterop.js; uploads will report an error.");
+        }
+    }
+
+    private async Task SelectSortAsync(ArchiveSortOption option)
+    {
+        _sortOption = option;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", SortStorageKey, option.ToString());
+        }
+        catch (Exception exception) when (exception is JSException or InvalidOperationException)
+        {
+            // Persistence is best-effort; the chosen sort still applies for this session.
         }
     }
 
