@@ -44,7 +44,22 @@
                             }
                             else
                             {
-                                @foreach (var folder in column.Items)
+                                <div class="list-group-item border-0 d-flex gap-1 p-1 sticky-top">
+                                    <input type="search"
+                                           class="form-control form-control-sm"
+                                           placeholder="Filter by name"
+                                           aria-label="Filter folders by name"
+                                           value="@column.Filter"
+                                           @oninput="e => column.Filter = e.Value?.ToString() ?? string.Empty" />
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary flex-shrink-0"
+                                            aria-label="@(column.Descending ? "Sorted by name Z to A" : "Sorted by name A to Z")"
+                                            title="@(column.Descending ? "Name Z–A" : "Name A–Z")"
+                                            @onclick="() => column.Descending = !column.Descending">
+                                        <i class="bi @(column.Descending ? "bi-sort-alpha-up" : "bi-sort-alpha-down")" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                @foreach (var folder in VisibleFolders(column))
                                 {
                                     <button class="list-group-item list-group-item-action border-0 bg-transparent d-flex align-items-center gap-2 @(folder.Id == selectedChildId ? "text-primary fw-semibold" : null)"
                                             type="button"
@@ -78,6 +93,18 @@
         public List<ArchiveItemDto> Items { get; set; } = [];
         public bool IsLoading { get; set; }
         public string? Error { get; set; }
+        public string Filter { get; set; } = string.Empty;
+        public bool Descending { get; set; }
+    }
+
+    private static IEnumerable<ArchiveItemDto> VisibleFolders(FolderColumn column)
+    {
+        var items = string.IsNullOrWhiteSpace(column.Filter)
+            ? column.Items
+            : column.Items.Where(i => i.Name.Contains(column.Filter.Trim(), StringComparison.OrdinalIgnoreCase));
+        return column.Descending
+            ? items.OrderByDescending(i => i.Name, StringComparer.CurrentCultureIgnoreCase)
+            : items.OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase);
     }
 
     private static readonly IReadOnlyList<CategoryOption> Categories =
