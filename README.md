@@ -33,6 +33,7 @@ Table of contents
 | Video compositions | ✅ | Combine two or more cuts into a composed MP4 with fades. |
 | Video previews | ✅ | Static JPEG thumbnails and hover-preview MP4s are generated server-side. |
 | Audio tracks | ✅ | The Video Library and Archive Browser player can switch between multiple embedded audio tracks (e.g. original-language and dubbed) from a translate-icon menu. The server stream-copies the chosen track into a cached MP4 on first use (no re-encoding), then the player swaps sources at the same position. |
+| VR POV | ✅ | A manual toggle in the video player projects the left half of any side-by-side VR180 frame onto a fixed-forward 180° curved WebGL view; available for every video in the Video Library and Archive Browser. |
 | Subtitles | ✅ | Same-named `.srt` subtitle files are converted to WebVTT for video playback. |
 | Audio | ✅ | Browse and play `.mp3`, `.m4a`, and `.wav` files, including album artwork from `.png`, `.jpg`, or `.jpeg`. |
 | Playlists | ✅ | Play every video/audio file in a folder (including subfolders) as a queue, with a YouTube-style player-and-queue view, auto-advance, Fill-tab expand, and resume of the same track and position across navigation. |

@@ -300,6 +300,19 @@
             <i class="bi bi-music-note-list" aria-hidden="true"></i>
         </button>
         }
+        @if (ShowVrPovButton)
+        {
+        <button class="btn @ToggleCssClass(IsVrPovActive)"
+                type="button"
+                aria-label="@VrPovTitle"
+                title="@VrPovTitle"
+                data-bs-toggle="tooltip"
+                data-bs-title="@VrPovTitle"
+                aria-pressed="@BooleanValue(IsVrPovActive)"
+                @onclick="HandleToggleVrPovAsync">
+            <i class="bi bi-badge-vr" aria-hidden="true"></i>
+        </button>
+        }
         <button class="btn @ActionCssClass"
                 type="button"
                 aria-label="@(IsFullscreenActive ? "Exit full screen" : "Full screen")"
@@ -360,6 +373,9 @@
     [Parameter] public bool IsFillTabActive { get; set; }
     [Parameter] public EventCallback ToggleFullscreen { get; set; }
     [Parameter] public bool IsFullscreenActive { get; set; }
+    [Parameter] public bool ShowVrPovButton { get; set; }
+    [Parameter] public bool IsVrPovActive { get; set; }
+    [Parameter] public EventCallback ToggleVrPov { get; set; }
     [Parameter] public int FillTabFocusRequest { get; set; }
     [Parameter] public bool HasSubtitles { get; set; }
     [Parameter] public EventCallback ToggleSubtitles { get; set; }
@@ -514,6 +530,8 @@
     private Task HandleSelectNextTrackAsync() => SelectNextTrack.InvokeAsync();
     private Task HandleOpenPlaylistAsync() => OpenPlaylist.InvokeAsync();
     private Task HandleEnterFillTabAsync() => EnterFillTab.InvokeAsync();
+    private string VrPovTitle => IsVrPovActive ? "Exit VR POV" : "Enable VR POV";
+    private Task HandleToggleVrPovAsync() => ToggleVrPov.InvokeAsync();
     private Task HandleToggleFullscreenAsync() => ToggleFullscreen.InvokeAsync();
     private Task HandleSetMarkerAAsync() => SetMarkerA.InvokeAsync();
     private Task HandleSetMarkerBAsync() => SetMarkerB.InvokeAsync();
