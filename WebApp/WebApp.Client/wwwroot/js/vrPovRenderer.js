@@ -1,3 +1,5 @@
+import { createCameraController, computeLimits, zoomedFov } from './vrPovCameraController.js';
+
 const sessions = new WeakMap();
 
 const HORIZONTAL_FOV_DEGREES = 100;
@@ -10,10 +12,11 @@ const vertexSource = `
 attribute vec3 aPosition;
 attribute vec2 aUv;
 uniform mat4 uProjection;
+uniform mat4 uView;
 varying vec2 vUv;
 void main() {
     vUv = aUv;
-    gl_Position = uProjection * vec4(aPosition, 1.0);
+    gl_Position = uProjection * uView * vec4(aPosition, 1.0);
 }`;
 
 const fragmentSource = `
@@ -131,13 +134,22 @@ function draw(session) {
         session.projectionDirty = true;
     }
 
+    const zoom = session.viewSource.getZoom?.() ?? 1;
+    if (session.zoom !== zoom) {
+        session.zoom = zoom;
+        session.projectionDirty = true;
+    }
+
     if (session.projectionDirty) {
         const aspect = canvas.width / Math.max(1, canvas.height);
-        const matrix = perspective(verticalFov(session.videoWidth, session.videoHeight), aspect, 0.1, 10);
+        const vFov = zoomedFov(verticalFov(session.videoWidth, session.videoHeight), zoom);
+        session.fov = { horizontal: 2 * Math.atan(Math.tan(vFov / 2) * aspect), vertical: vFov };
+        const matrix = perspective(vFov, aspect, 0.1, 10);
         gl.uniformMatrix4fv(session.projectionLocation, false, matrix);
         session.projectionDirty = false;
     }
 
+    gl.uniformMatrix4fv(session.viewLocation, false, session.viewSource.getViewMatrix());
     gl.bindTexture(gl.TEXTURE_2D, session.texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
     gl.clearColor(0, 0, 0, 1);
@@ -169,6 +181,7 @@ function teardown(session) {
     session.stopped = true;
     cancelAnimationFrame(session.frameHandle);
     session.observer?.disconnect();
+    session.viewSource.dispose?.();
     const { gl } = session;
     if (!gl.isContextLost()) {
         gl.deleteTexture(session.texture);
@@ -180,7 +193,8 @@ function teardown(session) {
     sessions.delete(session.canvas);
 }
 
-export function startVrPov(video, canvas) {
+// viewSource: { getViewMatrix(): Float32Array, getZoom?(): number, dispose?() }; defaults to the drag camera controller.
+export function startVrPov(video, canvas, viewSource = null) {
     stopVrPov(canvas);
 
     const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
@@ -223,6 +237,10 @@ export function startVrPov(video, canvas) {
         session = {
             gl, video, canvas, program, texture, positionBuffer, uvBuffer, indexBuffer,
             projectionLocation: gl.getUniformLocation(program, 'uProjection'),
+            viewLocation: gl.getUniformLocation(program, 'uView'),
+            fov: { horizontal: HORIZONTAL_FOV_DEGREES * Math.PI / 180, vertical: MIN_VERTICAL_FOV * Math.PI / 180 },
+            viewSource: null,
+            zoom: 1,
             indexCount: mesh.indices.length,
             videoWidth: 0,
             videoHeight: 0,
@@ -235,6 +253,9 @@ export function startVrPov(video, canvas) {
         return false;
     }
 
+    session.viewSource = viewSource ?? createCameraController(canvas, {
+        getLimits: () => computeLimits(session.fov.horizontal, session.fov.vertical)
+    });
     sessions.set(canvas, session);
     session.observer = new ResizeObserver(() => resize(session));
     session.observer.observe(canvas);
@@ -255,4 +276,12 @@ export function stopVrPov(canvas) {
     if (session) {
         teardown(session);
     }
+}
+
+export function resetVrPovView(canvas) {
+    sessions.get(canvas)?.viewSource.reset?.();
+}
+
+export function setVrPovSensitivity(canvas, value) {
+    sessions.get(canvas)?.viewSource.setSensitivity?.(value);
 }

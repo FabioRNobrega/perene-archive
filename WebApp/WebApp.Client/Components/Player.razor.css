@@ -170,3 +170,8 @@ audio {
         min-width: 7rem;
     }
 }
+
+/* VR POV camera drag: keep touch drags from scrolling or zooming the page. */
+canvas {
+    touch-action: none;
+}

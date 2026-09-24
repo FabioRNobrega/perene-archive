@@ -92,6 +92,7 @@
                     <canvas @ref="_vrCanvas"
                             class="@VrCanvasCssClass"
                             aria-label="VR POV view of @Selected.Name"
+                            style="@SaturationFilter"
                             @onpointerup="RevealControls"></canvas>
                 }
                 @if (ShowOverlayControls && !PlayerState.IsMusic)
@@ -309,7 +310,9 @@
         : "player-footer-controls flex-grow-1 w-100 min-w-0";
 
     private string VideoStyle => FormattableString.Invariant(
-        $"object-position: {_frame.PositionX:0.##}% {_frame.PositionY:0.##}%; touch-action: none; filter: saturate({_saturation.Value:0}%)");
+        $"object-position: {_frame.PositionX:0.##}% {_frame.PositionY:0.##}%; touch-action: none; {SaturationFilter}");
+
+    private string SaturationFilter => FormattableString.Invariant($"filter: saturate({_saturation.Value:0}%)");
 
     private string MusicCoverCssClass => _fillTab.IsActive
         ? "music-cover-image music-cover-fill object-fit-contain"
