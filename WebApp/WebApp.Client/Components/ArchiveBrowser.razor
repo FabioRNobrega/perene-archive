@@ -20,7 +20,7 @@
                 else
                 {
                     <li class="breadcrumb-item">
-                        <button class="btn btn-link p-0 align-baseline" type="button" disabled="@_operationPending" @onclick="() => LoadAsync(null)">
+                        <button class="btn btn-link p-0 align-baseline" type="button" disabled="@_operationPending" data-drop-folder="" @ondrop="() => DropOnFolderAsync(null)" @ondrop:preventDefault @onclick="() => LoadAsync(null)">
                             @_listing.DisplayName
                         </button>
                     </li>
@@ -37,6 +37,9 @@
                                 <button class="btn btn-link p-0 align-baseline text-break"
                                         type="button"
                                         disabled="@_operationPending"
+                                        data-drop-folder="@breadcrumb.FolderId"
+                                        @ondrop="() => DropOnFolderAsync(breadcrumb.FolderId)"
+                                        @ondrop:preventDefault
                                         @onclick="() => LoadAsync(breadcrumb.FolderId)">
                                     @breadcrumb.Name
                                 </button>
@@ -295,6 +298,59 @@
         <div class="alert alert-danger m-3" role="alert">@_error</div>
     }
 
+    @if (_contextMenu is { } contextMenu)
+    {
+        var menuBusy = _operationPending || _activeJob is not null;
+        <ul class="dropdown-menu show position-fixed shadow"
+            role="menu"
+            style="left:@(contextMenu.X)px;top:@(contextMenu.Y)px;z-index:1080;"
+            aria-label="@(contextMenu.Item is null ? $"Actions for {contextMenu.Count} selected items" : $"Actions for {contextMenu.Item.Name}")"
+            data-origin-id="@contextMenu.OriginId"
+            @ref="_contextMenuElement"
+            @onclick:stopPropagation="true">
+            @if (contextMenu.Item is { } menuItem)
+            {
+                @if (menuItem.Kind == ArchiveItemKind.Folder && menuItem.HasPlayableMedia)
+                {
+                    <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => PlayAsPlaylistFromActions(menuItem)"><i class="bi bi-collection-play me-2" aria-hidden="true"></i>Play as a Playlist</button></li>
+                }
+                @if (menuItem.IsConvertibleVideo && Category != "trash")
+                {
+                    <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => OpenConversionPlanFromActionsAsync(menuItem)"><i class="bi bi-file-earmark-play me-2" aria-hidden="true"></i>Convert / Compress to MP4</button></li>
+                }
+                @if (menuItem.Kind == ArchiveItemKind.Folder)
+                {
+                    @if (string.IsNullOrWhiteSpace(menuItem.FolderThumbnailUrl))
+                    {
+                        <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@(_operationPending || _folderThumbnailUploadingItemId == menuItem.Id)" @onclick="() => StartFolderThumbnailUploadFromActions(menuItem)"><i class="bi bi-image me-2" aria-hidden="true"></i>Add Thumbnail</button></li>
+                    }
+                    else
+                    {
+                        <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => RemoveFolderThumbnailFromActionsAsync(menuItem)"><i class="bi bi-image-fill me-2" aria-hidden="true"></i>Remove thumbnail</button></li>
+                    }
+                }
+                <li><a class="dropdown-item d-flex align-items-center" role="menuitem" href="@($"/api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(menuItem.Id)}/download")" aria-label="Download @menuItem.Name" @onclick="CloseContextMenu"><i class="bi bi-download me-2" aria-hidden="true"></i>Download</a></li>
+                <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => StartRenameFromActions(menuItem)"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Rename</button></li>
+                <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => StartMoveFromActions(menuItem)"><i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>Move</button></li>
+                @if (Category != "trash")
+                {
+                    <li><hr class="dropdown-divider" /></li>
+                    <li><button class="dropdown-item text-danger d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => DeleteFromActionsAsync(menuItem)"><i class="bi bi-trash3 me-2" aria-hidden="true"></i>Move to Trash</button></li>
+                }
+            }
+            else
+            {
+                <li><h6 class="dropdown-header">@contextMenu.Count items selected</h6></li>
+                <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@menuBusy" @onclick="StartBatchMoveFromContextMenu"><i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>Move</button></li>
+                @if (Category != "trash")
+                {
+                    <li><hr class="dropdown-divider" /></li>
+                    <li><button class="dropdown-item text-danger d-flex align-items-center" type="button" role="menuitem" disabled="@menuBusy" @onclick="StartBatchTrashFromContextMenu"><i class="bi bi-trash3 me-2" aria-hidden="true"></i>Move to Trash</button></li>
+                }
+            }
+        </ul>
+    }
+
     @if (_isLoading)
     {
         <div class="card-body d-flex flex-column align-items-center gap-2 py-5 text-center text-body-secondary" role="status" aria-live="polite">
@@ -329,8 +385,19 @@
             {
                 var selected = IsSelected(item);
                 var multiSelected = _selectedForMoveIds.Contains(item.Id);
+                var canDrag = !_operationPending && _activeJob is null;
                 <div class="col">
                     <div class="card h-100 position-relative overflow-hidden @(selected ? "border-primary border-2" : (multiSelected ? "border-success border-2" : null))"
+                         data-item-id="@item.Id"
+                         data-item-name="@item.Name"
+                         data-selected="@(multiSelected ? "true" : null)"
+                         data-drop-folder="@(item.Kind == ArchiveItemKind.Folder ? "" : null)"
+                         draggable="@(canDrag ? "true" : "false")"
+                         @ondragstart="() => StartDrag(item)"
+                         @ondrop="() => DropOnFolderAsync(item.Kind == ArchiveItemKind.Folder ? item.Id : null, item.Kind == ArchiveItemKind.Folder)"
+                         @ondrop:preventDefault
+                         @oncontextmenu="(MouseEventArgs args) => OpenContextMenu(item, args)"
+                         @oncontextmenu:preventDefault
                          @onmouseenter="() => StartPreview(item)"
                          @onmouseleave="ClearPreview"
                          @onkeydown="HandleCardKeyDown">
@@ -900,6 +967,15 @@
     private bool _focusRenameInput;
     private DotNetObjectReference<ArchiveBrowser>? _outsideClickReference;
     private IJSObjectReference? _outsideClickWatcher;
+    private IJSObjectReference? _contextMenuModule;
+    private IJSObjectReference? _contextMenuWatcher;
+    private IJSObjectReference? _dragDropWatcher;
+    private ContextMenuState? _contextMenu;
+    private bool _contextMenuPositionPending;
+    private ElementReference _contextMenuElement;
+    private IReadOnlyList<string> _dragIds = [];
+
+    private sealed record ContextMenuState(ArchiveItemDto? Item, int Count, string OriginId, double X, double Y);
 
     private const string SortStorageKey = "archiveBrowser.sortOption";
     private ArchiveSortOption _sortOption = ArchiveSortOption.Name;
@@ -950,6 +1026,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_contextMenuModule is not null)
+        {
+            await SyncContextMenuWatcherAsync();
+        }
+
         if (_focusRenameInput && _renameInput?.Element is { } renameElement)
         {
             _focusRenameInput = false;
@@ -985,6 +1066,17 @@
         catch (JSException)
         {
             // The modal remains usable with Bootstrap's data attributes if JS interop import fails.
+        }
+
+        try
+        {
+            _contextMenuModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/archiveContextMenu.js");
+            _dragDropWatcher = await _contextMenuModule.InvokeAsync<IJSObjectReference>("installDragDrop", _rootElement);
+        }
+        catch (JSException exception)
+        {
+            // Right-click menu and drag-and-drop move are additive; the actions panel and Move picker remain.
+            Logger.LogWarning(exception, "Failed to import archiveContextMenu.js; right-click menu and drag-and-drop are unavailable.");
         }
 
         try
@@ -1191,7 +1283,100 @@
     }
 
     private void ToggleActions(string itemId) => _openActionsItemId = _openActionsItemId == itemId ? null : itemId;
-    private void CloseActions() => _openActionsItemId = null;
+    private void CloseActions()
+    {
+        _openActionsItemId = null;
+        _contextMenu = null;
+    }
+
+    private void CloseContextMenu() => _contextMenu = null;
+
+    [JSInvokable]
+    public async Task CloseContextMenuAsync()
+    {
+        if (_contextMenu is null)
+        {
+            return;
+        }
+
+        _contextMenu = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenContextMenu(ArchiveItemDto item, MouseEventArgs args)
+    {
+        if (_isLoading || _contextMenuModule is null)
+        {
+            return;
+        }
+
+        if (!_selectedForMoveIds.Contains(item.Id))
+        {
+            _selectedForMoveIds.Clear();
+            _selectedForMoveIds.Add(item.Id);
+            _selectionAnchorId = item.Id;
+        }
+
+        var targets = ArchiveDragDropRules.ResolveTargets(_selectedForMoveIds, item.Id);
+        _openActionsItemId = null;
+        _contextMenu = new ContextMenuState(targets.Count >= 2 ? null : item, targets.Count, item.Id, args.ClientX, args.ClientY);
+        _contextMenuPositionPending = true;
+    }
+
+    private void StartBatchMoveFromContextMenu() { CloseContextMenu(); StartBatchMove(); }
+    private void StartBatchTrashFromContextMenu() { CloseContextMenu(); StartBatchTrash(); }
+
+    private async Task SyncContextMenuWatcherAsync()
+    {
+        try
+        {
+            if (_contextMenu is null || _contextMenuPositionPending)
+            {
+                if (_contextMenuWatcher is not null)
+                {
+                    await _contextMenuWatcher.InvokeVoidAsync("dispose");
+                    await _contextMenuWatcher.DisposeAsync();
+                    _contextMenuWatcher = null;
+                }
+            }
+
+            if (_contextMenu is { } menu && _contextMenuPositionPending && _contextMenuModule is not null && _outsideClickReference is not null)
+            {
+                _contextMenuPositionPending = false;
+                _contextMenuWatcher = await _contextMenuModule.InvokeAsync<IJSObjectReference>(
+                    "openContextMenu", _contextMenuElement, menu.X, menu.Y, _outsideClickReference, nameof(CloseContextMenuAsync));
+            }
+        }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException)
+        {
+            _contextMenu = null;
+        }
+    }
+
+    private void StartDrag(ArchiveItemDto item)
+    {
+        if (_operationPending || _activeJob is not null)
+        {
+            _dragIds = [];
+            return;
+        }
+
+        _dragIds = ArchiveDragDropRules.ResolveTargets(_selectedForMoveIds, item.Id);
+    }
+
+    private async Task DropOnFolderAsync(string? folderId, bool isFolderTarget = true)
+    {
+        var ids = _dragIds;
+        _dragIds = [];
+        if (!isFolderTarget || _listing is null || _operationPending || _activeJob is not null ||
+            !ArchiveDragDropRules.CanDrop(ids, folderId, _listing.CurrentFolderId))
+        {
+            return;
+        }
+
+        await MoveItemsAsync(ids, Category, folderId);
+        ClearSelection();
+    }
     private void HandleCardKeyDown(KeyboardEventArgs args)
     {
         if (args.Key == "Escape")
@@ -2115,12 +2300,15 @@
             return;
         }
 
-        await EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
-            $"api/archive/{Category}/items/location",
-            new BatchMoveArchiveItemsRequest(ids, destination.DestinationCategory, destination.DestinationFolderId)));
+        await MoveItemsAsync(ids, destination.DestinationCategory, destination.DestinationFolderId);
         ClearSelection();
         CancelDialogs();
     }
+
+    private Task MoveItemsAsync(IReadOnlyList<string> ids, string destinationCategory, string? destinationFolderId) =>
+        EnqueueMutationAsync(() => Http.PatchAsJsonAsync(
+            $"api/archive/{Category}/items/location",
+            new BatchMoveArchiveItemsRequest(ids, destinationCategory, destinationFolderId)));
 
     private void StartBatchTrash()
     {
@@ -2509,6 +2697,23 @@
             {
                 await _outsideClickWatcher.InvokeVoidAsync("dispose");
                 await _outsideClickWatcher.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        foreach (var watcher in new[] { _contextMenuWatcher, _dragDropWatcher })
+        {
+            if (watcher is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await watcher.InvokeVoidAsync("dispose");
+                await watcher.DisposeAsync();
             }
             catch (JSDisconnectedException)
             {

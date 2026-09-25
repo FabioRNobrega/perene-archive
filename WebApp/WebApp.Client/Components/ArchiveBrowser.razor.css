@@ -62,3 +62,19 @@
         transition: none;
     }
 }
+
+/* Drag-and-drop move: dashed outline is the non-color drop cue; child pointer-events are disabled
+   during a drag so dragenter/dragleave do not flicker over card content. */
+.archive-dragging [data-drop-folder] * {
+    pointer-events: none;
+}
+
+[data-drop-active="true"] {
+    outline: 3px dashed var(--bs-primary);
+    outline-offset: 2px;
+    background-color: var(--bs-primary-bg-subtle);
+}
+
+.archive-drag-source {
+    opacity: .5;
+}
