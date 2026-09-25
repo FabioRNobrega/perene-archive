@@ -35,28 +35,31 @@ internal interface IVideoConversionProcessController
 
 internal sealed class VideoConversionProcessController(IVideoConversionProcessSignal signal) : IVideoConversionProcessController
 {
+    private sealed class JobControl
+    {
+        public Process? Process;
+        public CancellationTokenSource? Cancellation;
+        public bool Paused;
+        public bool Stopped;
+    }
+
     private readonly object _gate = new();
-    private string? _jobId;
-    private Process? _process;
-    private CancellationTokenSource? _cancellation;
-    private bool _paused;
-    private bool _stopped;
+    private readonly Dictionary<string, JobControl> _jobs = new();
 
     public CancellationToken Begin(string jobId, CancellationToken shutdownToken)
     {
         lock (_gate)
         {
-            if (_jobId is not null) throw new InvalidOperationException("A conversion process is already active.");
-            _jobId = jobId;
-            _cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
-            return _cancellation.Token;
+            var control = new JobControl { Cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken) };
+            if (!_jobs.TryAdd(jobId, control)) { control.Cancellation.Dispose(); throw new InvalidOperationException("This conversion job is already active."); }
+            return control.Cancellation.Token;
         }
     }
-    public bool RegisterProcess(string jobId, Process process) { lock (_gate) { if (_jobId != jobId || _stopped) return false; _process = process; return true; } }
-    public void UnregisterProcess(string jobId, Process process) { lock (_gate) { if (_jobId == jobId && ReferenceEquals(_process, process)) _process = null; } }
-    public bool Pause(string jobId) { lock (_gate) { if (_jobId != jobId || _process is null || _paused || _stopped || _process.HasExited || !signal.Suspend(_process)) return false; _paused = true; return true; } }
-    public bool Resume(string jobId) { lock (_gate) { if (_jobId != jobId || _process is null || !_paused || _stopped || _process.HasExited || !signal.Resume(_process)) return false; _paused = false; return true; } }
-    public bool Stop(string jobId) { lock (_gate) { if (_jobId != jobId || _stopped) return false; _stopped = true; _paused = false; _cancellation?.Cancel(); if (_process is { HasExited: false } process) signal.Terminate(process); return true; } }
-    public bool CanPublish(string jobId) { lock (_gate) return _jobId == jobId && !_stopped; }
-    public void Complete(string jobId) { lock (_gate) { if (_jobId != jobId) return; _cancellation?.Dispose(); _cancellation = null; _process = null; _jobId = null; _paused = false; _stopped = false; } }
+    public bool RegisterProcess(string jobId, Process process) { lock (_gate) { if (!_jobs.TryGetValue(jobId, out var c) || c.Stopped) return false; c.Process = process; return true; } }
+    public void UnregisterProcess(string jobId, Process process) { lock (_gate) { if (_jobs.TryGetValue(jobId, out var c) && ReferenceEquals(c.Process, process)) c.Process = null; } }
+    public bool Pause(string jobId) { lock (_gate) { if (!_jobs.TryGetValue(jobId, out var c) || c.Process is null || c.Paused || c.Stopped || c.Process.HasExited || !signal.Suspend(c.Process)) return false; c.Paused = true; return true; } }
+    public bool Resume(string jobId) { lock (_gate) { if (!_jobs.TryGetValue(jobId, out var c) || c.Process is null || !c.Paused || c.Stopped || c.Process.HasExited || !signal.Resume(c.Process)) return false; c.Paused = false; return true; } }
+    public bool Stop(string jobId) { lock (_gate) { if (!_jobs.TryGetValue(jobId, out var c) || c.Stopped) return false; c.Stopped = true; c.Paused = false; c.Cancellation?.Cancel(); if (c.Process is { HasExited: false } process) signal.Terminate(process); return true; } }
+    public bool CanPublish(string jobId) { lock (_gate) return _jobs.TryGetValue(jobId, out var c) && !c.Stopped; }
+    public void Complete(string jobId) { lock (_gate) { if (_jobs.Remove(jobId, out var c)) c.Cancellation?.Dispose(); } }
 }

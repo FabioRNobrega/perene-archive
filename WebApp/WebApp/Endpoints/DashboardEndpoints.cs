@@ -112,7 +112,7 @@ internal static class DashboardEndpoints
 
     private static IResult GetJobs(IVideoConversionJobStatusStore statuses) => Results.Ok(statuses.GetAll().Select(ToConversionDto));
     private static IResult Pause(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Pause, statuses.Pause);
-    private static IResult Resume(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Resume, statuses.Resume);
+    private static IResult Resume(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, statuses.Resume, controller.Resume);
     private static IResult Stop(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Stop, statuses.Stop);
     private static IResult Control(string id, IVideoConversionJobStatusStore statuses, Func<string, bool> processAction, Func<string, bool> statusAction)
     {
@@ -120,7 +120,7 @@ internal static class DashboardEndpoints
         if (!processAction(id) || !statusAction(id)) return Results.Conflict(new { message = "This conversion job is no longer in a state that can be controlled." });
         return Results.Ok(ToConversionDto(statuses.Get(id)!));
     }
-    internal static VideoConversionJobDto ToConversionDto(WebApp.Models.VideoConversionStatus status) => new(status.JobId, status.SourceName, status.Action.ToString(), status.State, status.SourceSizeBytes, status.OutputSizeBytes, status.OutputItemId, status.Diagnostic, status.QueuedAtUtc, status.StartedAtUtc, status.SourceDurationSeconds, status.ProcessedDurationSeconds, status.Speed, status.ProfileLabel, status.OutputHeight, status.EstimatedSizeBytes);
+    internal static VideoConversionJobDto ToConversionDto(WebApp.Models.VideoConversionStatus status) => new(status.JobId, status.SourceName, status.Action.ToString(), status.State, status.SourceSizeBytes, status.OutputSizeBytes, status.OutputItemId, status.Diagnostic, status.QueuedAtUtc, status.StartedAtUtc, status.SourceDurationSeconds, status.ProcessedDurationSeconds, status.Speed, status.ProfileLabel, status.OutputHeight, status.EstimatedSizeBytes, status.FinishedAtUtc);
 
     private static async Task<IResult> GetDockerAsync(IDockerMetricsService dockerMetricsService, CancellationToken cancellationToken) =>
         Results.Ok(await dockerMetricsService.GetDockerMetricsAsync(cancellationToken));
