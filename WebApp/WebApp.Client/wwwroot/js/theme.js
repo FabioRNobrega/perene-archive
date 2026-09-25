@@ -46,6 +46,18 @@
         return setTheme(getTheme() === darkTheme ? lightTheme : darkTheme);
     }
 
+    // Global modal auto-focus: when a Bootstrap modal finishes opening, focus
+    // its [autofocus] element or, failing that, its first text-entry control.
+    document.addEventListener('shown.bs.modal', event => {
+        const target = event.target.querySelector('[autofocus]:not([disabled])')
+            ?? event.target.querySelector(
+                'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]):not([disabled]), textarea:not([disabled]), select:not([disabled])');
+        target?.focus();
+        if (target && typeof target.select === 'function' && target.value) {
+            target.select();
+        }
+    });
+
     applyTheme(readStoredTheme() ?? darkTheme);
     window.videoManagerTheme = Object.freeze({ getTheme, toggleTheme });
 })();
