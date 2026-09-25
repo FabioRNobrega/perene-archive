@@ -21,6 +21,17 @@ public sealed class ArchiveItemSorterTests
     }
 
     [Fact]
+    public void Sort_WithDefaultOption_PlacesFavoritesFirstWithoutChangingFolderOrdering()
+    {
+        var favoriteFile = File("z") with { IsFavorite = true };
+        var favoriteFolder = Folder("b") with { IsFavorite = true };
+
+        var result = ArchiveItemSorter.Sort([File("a"), favoriteFile, Folder("a"), favoriteFolder], ArchiveSortOption.Default);
+
+        Assert.Equal(["b", "z", "a", "a"], Names(result));
+    }
+
+    [Fact]
     public void Sort_WithNameDescendingOption_OrdersFoldersThenFilesReverseAlphabetically()
     {
         var result = ArchiveItemSorter.Sort([File("banana"), Folder("a"), File("Cherry"), Folder("b"), File("apple")], ArchiveSortOption.NameDescending);

@@ -330,6 +330,7 @@
                     }
                 }
                 <li><a class="dropdown-item d-flex align-items-center" role="menuitem" href="@($"/api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(menuItem.Id)}/download")" aria-label="Download @menuItem.Name" @onclick="CloseContextMenu"><i class="bi bi-download me-2" aria-hidden="true"></i>Download</a></li>
+                <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => ToggleFavoriteAsync(menuItem)"><i class="bi @(menuItem.IsFavorite ? "bi-bookmark-fill" : "bi-bookmark") me-2" aria-hidden="true"></i>@(menuItem.IsFavorite ? "Remove from favorites" : "Favorite")</button></li>
                 <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => StartRenameFromActions(menuItem)"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Rename</button></li>
                 <li><button class="dropdown-item d-flex align-items-center" type="button" role="menuitem" disabled="@_operationPending" @onclick="() => StartMoveFromActions(menuItem)"><i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>Move</button></li>
                 @if (Category != "trash")
@@ -408,15 +409,15 @@
                             </span>
                         }
                         <div class="position-absolute top-0 end-0 z-3 me-2" @onclick:stopPropagation="true">
-                            <button class="btn btn-primary btn-sm rounded-top-0 rounded-bottom-2 d-inline-flex align-items-center justify-content-center"
+                            <button class="btn @(item.IsFavorite ? "btn-secondary" : "btn-primary") btn-sm rounded-top-0 rounded-bottom-2 d-inline-flex align-items-center justify-content-center"
                                     style="width:40px;height:40px;"
                                     type="button"
                                     disabled="@_operationPending"
                                     aria-haspopup="menu"
                                     aria-expanded="@(_contextMenu?.OriginId == item.Id ? "true" : "false")"
-                                    aria-label="Actions for @item.Name"
+                                    aria-label="@(item.IsFavorite ? $"Actions for {item.Name}, favorite" : $"Actions for {item.Name}")"
                                     @onclick="(MouseEventArgs args) => OpenContextMenu(item, args)">
-                                <i class="bi bi-arrow-bar-down" aria-hidden="true"></i>
+                                <i class="bi @(item.IsFavorite ? "bi-bookmark-fill" : "bi-arrow-bar-down")" aria-hidden="true"></i>
                             </button>
                         </div>
                         <button class="@CardButtonCssClass(item)"
@@ -886,9 +887,10 @@
     private sealed record ContextMenuState(ArchiveItemDto? Item, int Count, string OriginId, double X, double Y);
 
     private const string SortStorageKey = "archiveBrowser.sortOption";
-    private ArchiveSortOption _sortOption = ArchiveSortOption.Name;
+    private ArchiveSortOption _sortOption = ArchiveSortOption.Default;
     private static readonly (ArchiveSortOption Option, string Label)[] SortChoices =
     [
+        (ArchiveSortOption.Default, "Default"),
         (ArchiveSortOption.Name, "Name (A-Z)"),
         (ArchiveSortOption.NameDescending, "Name (Z-A)"),
         (ArchiveSortOption.Size, "Size"),
@@ -1291,6 +1293,19 @@
     }
     private void PlayAsPlaylistFromActions(ArchiveItemDto item) { CloseActions(); PlayAsPlaylist(item); }
     private async Task OpenConversionPlanFromActionsAsync(ArchiveItemDto item) { CloseActions(); await OpenConversionPlanAsync(item); }
+    private async Task ToggleFavoriteAsync(ArchiveItemDto item)
+    {
+        CloseActions(); _operationPending = true; _error = null;
+        try
+        {
+            using var response = await Http.PutAsync($"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(item.Id)}/favorite", null);
+            if (!response.IsSuccessStatusCode) { _error = "The favorite could not be updated."; return; }
+            var updated = await response.Content.ReadFromJsonAsync<ArchiveFavoriteRequest>();
+            if (updated is not null && _listing is not null) _listing = _listing with { Items = _listing.Items.Select(x => x.Id == item.Id ? x with { IsFavorite = updated.IsFavorite } : x).ToList() };
+        }
+        catch (HttpRequestException) { _error = "The favorite could not reach the server."; }
+        finally { _operationPending = false; }
+    }
     private void StartRenameFromActions(ArchiveItemDto item) { CloseActions(); StartRename(item); }
     private void StartMoveFromActions(ArchiveItemDto item) { CloseActions(); StartMove(item); }
     private async Task DeleteFromActionsAsync(ArchiveItemDto item) { CloseActions(); await DeleteAsync(item); }

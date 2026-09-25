@@ -56,6 +56,8 @@ internal interface IArchiveService
     bool TryResolveVideo(string categoryKey, string itemId, out ArchiveItemEntry? item);
 
     bool TryResolveDownloadableItem(string categoryKey, string itemId, out ArchiveItemEntry? item);
+
+    bool TryResolveItem(string categoryKey, string itemId, out ArchiveItemEntry? item);
     bool TryResolveConvertibleVideo(string categoryKey, string itemId, out ArchiveItemEntry? item)
     {
         item = null;

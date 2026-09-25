@@ -374,6 +374,20 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         }
     }
 
+    public bool TryResolveItem(string categoryKey, string itemId, out ArchiveItemEntry? item)
+    {
+        try
+        {
+            item = ResolveItem(ResolveCategory(categoryKey), itemId);
+            return true;
+        }
+        catch (ArchiveException)
+        {
+            item = null;
+            return false;
+        }
+    }
+
     public bool TryResolveConvertibleVideo(string categoryKey, string itemId, out ArchiveItemEntry? item)
     {
         item = null;

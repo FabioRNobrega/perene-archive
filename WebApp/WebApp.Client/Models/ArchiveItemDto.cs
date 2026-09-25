@@ -33,4 +33,5 @@ public sealed record ArchiveItemDto(
     bool HasPlayableMedia = false,
     bool IsConvertibleVideo = false,
     IReadOnlyList<AudioTrackDto>? AudioTracks = null,
-    string? FolderThumbnailUrl = null);
+    string? FolderThumbnailUrl = null,
+    bool IsFavorite = false);

@@ -149,6 +149,7 @@ builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGe
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
+builder.Services.AddSingleton<IArchiveFavoritesService, ArchiveFavoritesService>();
 builder.Services.AddSingleton<IArchiveMutationJobQueue, ArchiveMutationJobQueue>();
 builder.Services.AddSingleton<IArchiveMutationJobStatusStore, ArchiveMutationJobStatusStore>();
 builder.Services.AddSingleton<IArchiveMutationExecutor, ArchiveMutationExecutor>();

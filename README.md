@@ -25,6 +25,8 @@ Table of contents
 
 ## Current Supported Features
 
+| Archive favorites | Mark an individual archive file or folder from its actions menu. Favorites are shared across trusted LAN clients and appear first in the default sort; explicit sorts keep their ordinary order. |
+
 | Area | Status | Supported capabilities and formats |
 | --- | :---: | --- |
 | Video library | ✅ | Browse and play `.mp4`, `.webm`, `.mov`, and `.m4v` videos. |

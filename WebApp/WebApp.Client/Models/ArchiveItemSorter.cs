@@ -4,7 +4,9 @@ public static class ArchiveItemSorter
 {
     public static IReadOnlyList<ArchiveItemDto> Sort(IEnumerable<ArchiveItemDto> items, ArchiveSortOption option)
     {
-        var grouped = items.OrderBy(item => item.Kind == ArchiveItemKind.File);
+        var grouped = option == ArchiveSortOption.Default
+            ? items.OrderBy(item => !item.IsFavorite).ThenBy(item => item.Kind == ArchiveItemKind.File)
+            : items.OrderBy(item => item.Kind == ArchiveItemKind.File);
         var ordered = option == ArchiveSortOption.NameDescending
             ? grouped.ThenByDescending(item => item.Name, StringComparer.OrdinalIgnoreCase)
             : grouped.ThenBy(item => item.Kind == ArchiveItemKind.Folder ? item.Name : string.Empty, StringComparer.OrdinalIgnoreCase);

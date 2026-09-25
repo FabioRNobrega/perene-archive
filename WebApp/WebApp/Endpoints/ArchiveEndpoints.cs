@@ -13,6 +13,7 @@ internal static class ArchiveEndpoints
     public static IEndpointRouteBuilder MapArchiveEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/archive/{category}/items", List);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist);
         endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo);
         endpoints.MapPost("/api/archive/{category}/items/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync);
@@ -106,15 +107,38 @@ internal static class ArchiveEndpoints
         SubtitleCoordinator subtitleCoordinator,
         VideoMetadataCoordinator metadataCoordinator,
         IEpubBookService epubBookService,
+        IArchiveFavoritesService favorites,
         CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.List(category, folderId),
+        await ExecuteAsync(async () =>
+        {
+            var listing = archive.List(category, folderId);
+            var dto = await ToDtoAsync(
+            listing,
             thumbnailCoordinator,
             hoverPreviewCoordinator,
             subtitleCoordinator,
             metadataCoordinator,
             epubBookService,
-            cancellationToken));
+            cancellationToken);
+            var ids = await favorites.GetFavoriteIdsAsync(category, listing.Items.Select(item => item.Id), cancellationToken);
+            return dto with { Items = dto.Items.Select(item => item with { IsFavorite = ids.Contains(item.Id) }).ToList() };
+        });
+
+    private static async Task<IResult> ToggleFavoriteAsync(string category, string id, IArchiveFavoritesService favorites, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Results.Ok(new ArchiveFavoriteRequest(id, await favorites.ToggleAsync(category, id, cancellationToken)));
+        }
+        catch (ArchiveNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (ArchiveValidationException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    }
 
     private static async Task<IResult> GetPlaylist(
         string category,
