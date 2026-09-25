@@ -28,37 +28,8 @@
     transform: translateY(0);
 }
 
-.archive-actions-panel {
-    z-index: 2;
-    overflow-y: auto;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-    border-radius: var(--bs-card-border-radius);
-    color: var(--text-strong);
-    background: var(--bg-surface);
-    border: 1px solid var(--hover-border);
-    transform: translateY(-100%);
-    transition: transform .18s ease;
-    pointer-events: none;
-}
-
-.archive-actions-panel::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-}
-
-.archive-actions-panel.is-open {
-    transform: translateY(0);
-    pointer-events: auto;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .archive-cover-overlay {
-        transition: none;
-    }
-
-    .archive-actions-panel {
         transition: none;
     }
 }
