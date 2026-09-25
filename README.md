@@ -28,7 +28,7 @@ Table of contents
 | Area | Status | Supported capabilities and formats |
 | --- | :---: | --- |
 | Video library | ✅ | Browse and play `.mp4`, `.webm`, `.mov`, and `.m4v` videos. |
-| Video conversion | ✅ | Plan each supported source (including `.vob`) before queueing a non-destructive, collision-safe sibling MP4: choose a compatible/compression profile, non-upscaling resolution, quality or target size, and review a server-calculated estimated output size. Current-session jobs can pause/resume or stop safely; burn one embedded subtitle track or detected closed captions permanently into the video rather than preserve switchable captions. |
+| Video conversion | ✅ | Plan each supported source (including `.vob`) before queueing a non-destructive, collision-safe sibling MP4: choose a compatible/compression profile, non-upscaling resolution (original, 1080p, 720p, or 480p; 720p stays the recommended default for larger sources), quality or target size, and review a server-calculated estimated output size. Current-session jobs can pause/resume or stop safely; burn one embedded subtitle track or detected closed captions permanently into the video rather than preserve switchable captions. |
 | Video editing | ✅ | Reframe vertical-video previews, set A/B points, and export stream-copied cuts. |
 | Video compositions | ✅ | Combine two or more cuts into a composed MP4 with fades. |
 | Video previews | ✅ | Static JPEG thumbnails and hover-preview MP4s are generated server-side. |
