@@ -335,7 +335,7 @@ h1:focus { outline: none; }
 .form-control,
 .form-select { color: var(--text-strong); background-color: var(--bg-elevated); border-color: var(--border); font-family: var(--font-family-base); }
 .form-control:focus,
-.form-select:focus { color: var(--text-strong); background-color: var(--bg-elevated); border-color: var(--brand-blue-onbg); box-shadow: 0 0 0 .25rem rgba(47, 102, 144, .25); }
+.form-select:focus { color: var(--text-strong); background-color: var(--bg-elevated); border-color: var(--brand-gold-onbg); box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color); }
 .form-range { accent-color: #b98a2e; }
 .form-switch .form-check-input { cursor: pointer; background-color: var(--bg-elevated); border-color: var(--border-strong); }
 .form-check-input:checked { background-color: #b98a2e; border-color: #b98a2e; }

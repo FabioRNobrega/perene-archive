@@ -750,7 +750,7 @@
                 </div>
                 <div class="modal-body">
                     <label class="form-label" for="@RenameInputId">Name</label>
-                    <InputText id="@RenameInputId" class="form-control" @bind-Value="_renameName" />
+                    <InputText @ref="_renameInput" id="@RenameInputId" class="form-control" @bind-Value="_renameName" />
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" disabled="@_operationPending" @onclick="CancelDialogs">Cancel</button>
@@ -896,6 +896,8 @@
     private string? _selectionAnchorId;
     private bool _isBatchMove;
     private ElementReference _rootElement;
+    private InputText? _renameInput;
+    private bool _focusRenameInput;
     private DotNetObjectReference<ArchiveBrowser>? _outsideClickReference;
     private IJSObjectReference? _outsideClickWatcher;
 
@@ -948,6 +950,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusRenameInput && _renameInput?.Element is { } renameElement)
+        {
+            _focusRenameInput = false;
+            await renameElement.FocusAsync();
+        }
+
         if (!firstRender)
         {
             return;
@@ -1925,6 +1933,7 @@
     {
         _renaming = item;
         _renameName = item.Name;
+        _focusRenameInput = true;
         _moving = null;
         _confirmingEmptyTrash = false;
         _confirmingBatchTrash = false;
