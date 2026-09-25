@@ -38,4 +38,27 @@ public sealed class MediaPlayerStateTests
         Assert.Equal(1.25, state.PlaybackRate);
         Assert.Equal(12, state.CurrentTime);
     }
+
+    [Fact]
+    public void Restore_playback_preferences_keeps_selection_specific_state_reset()
+    {
+        var state = new MediaPlayerState();
+        state.Select("one");
+        state.Synchronize(new MediaSnapshot(20, 60, .4, true, 1.25, true, false, false));
+        state.SetMarkerA();
+        state.Select("two");
+
+        state.RestorePlaybackPreferences(.4, true, 1.25, false);
+
+        Assert.Equal(.4, state.Volume);
+        Assert.True(state.IsMuted);
+        Assert.Equal(1.25, state.PlaybackRate);
+        Assert.False(state.IsSubtitlesEnabled);
+        Assert.False(state.IsStandardLoop);
+        Assert.False(state.IsAbLoop);
+        Assert.Null(state.MarkerA);
+        Assert.Null(state.MarkerB);
+        Assert.Null(state.SelectedAudioTrackIndex);
+        Assert.Equal(0, state.CurrentTime);
+    }
 }

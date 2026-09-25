@@ -26,5 +26,7 @@ public sealed class VrPovState
         return IsActive;
     }
 
+    public void Restore(bool isActive) => IsActive = isActive;
+
     public void Exit() => IsActive = false;
 }

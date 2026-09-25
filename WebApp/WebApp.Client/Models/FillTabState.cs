@@ -5,7 +5,7 @@ public sealed class FillTabState
     public string? SelectionId { get; private set; }
     public bool IsActive { get; private set; }
 
-    public bool Select(string? id)
+    public bool Select(string? id, bool retainActive = false)
     {
         if (string.Equals(SelectionId, id, StringComparison.Ordinal))
         {
@@ -14,8 +14,12 @@ public sealed class FillTabState
 
         SelectionId = id;
         var wasActive = IsActive;
-        IsActive = false;
-        return wasActive;
+        if (!retainActive)
+        {
+            IsActive = false;
+        }
+
+        return wasActive && !retainActive;
     }
 
     public bool Enter()

@@ -148,6 +148,14 @@ public sealed class MediaPlayerState
 
     public void SetSubtitlesEnabled(bool enabled) => IsSubtitlesEnabled = enabled;
 
+    public void RestorePlaybackPreferences(double volume, bool isMuted, double playbackRate, bool isSubtitlesEnabled)
+    {
+        Volume = double.IsFinite(volume) ? Math.Clamp(volume, 0, 1) : Volume;
+        IsMuted = isMuted;
+        PlaybackRate = double.IsFinite(playbackRate) && playbackRate > 0 ? playbackRate : PlaybackRate;
+        IsSubtitlesEnabled = isSubtitlesEnabled;
+    }
+
     public void SetSelectedAudioTrack(int index) => SelectedAudioTrackIndex = index;
 
     public bool TryMoveToAbStart(out double target)

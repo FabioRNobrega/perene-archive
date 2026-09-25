@@ -293,6 +293,27 @@ public sealed class PersistentPlayerStateTests
     }
 
     [Fact]
+    public void Playlist_preferences_remain_for_the_same_active_playlist_and_clear_on_exit()
+    {
+        var state = new PersistentPlayerState();
+        var first = CreateArchiveVideo("clip-one", "clip.mp4");
+        var second = CreateArchiveVideo("clip-two", "clip2.mp4");
+        state.EnterPlaylistView("videos", "folder-1", "My Folder", [first, second]);
+        state.PlaylistPreferences.Capture(true, 225, .5, false, 1.2, false, true);
+
+        Assert.True(state.SelectNextTrack());
+        state.EnterPlaylistView("videos", "folder-1", "My Folder", [first, second]);
+
+        Assert.True(state.PlaylistPreferences.IsActive);
+        Assert.True(state.PlaylistPreferences.IsVrPovEnabled);
+        Assert.Equal(225, state.PlaylistPreferences.Saturation);
+
+        state.ExitPlaylistView();
+
+        Assert.False(state.PlaylistPreferences.IsActive);
+    }
+
+    [Fact]
     public void Entering_a_different_playlist_still_selects_the_first_item()
     {
         var state = new PersistentPlayerState();
@@ -308,6 +329,9 @@ public sealed class PersistentPlayerStateTests
         Assert.Equal("clip-three", state.SelectedId);
         Assert.Equal(0, state.LastKnownTime);
         Assert.False(state.WasPlaying);
+        Assert.True(state.PlaylistPreferences.IsActive);
+        Assert.Equal("folder-2", state.PlaylistPreferences.FolderId);
+        Assert.False(state.PlaylistPreferences.IsVrPovEnabled);
     }
 
     [Fact]
@@ -326,6 +350,7 @@ public sealed class PersistentPlayerStateTests
         Assert.False(state.CanReturnToPlaylist);
         Assert.Null(state.PlaylistCategory);
         Assert.Null(state.PlaylistFolderId);
+        Assert.False(state.PlaylistPreferences.IsActive);
     }
 
     [Fact]
@@ -369,6 +394,7 @@ public sealed class PersistentPlayerStateTests
         Assert.False(state.CanReturnToPlaylist);
         Assert.Null(state.PlaylistCategory);
         Assert.Null(state.PlaylistFolderId);
+        Assert.False(state.PlaylistPreferences.IsActive);
     }
 
     [Fact]

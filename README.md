@@ -38,7 +38,7 @@ Table of contents
 | VR POV | ✅ | A manual toggle in the video player projects the left half of any side-by-side VR180 frame onto a 180° curved WebGL view that can be looked around by dragging (yaw/pitch with mouse, touch or pen; mouse-wheel or pinch to zoom; double-click recenters); available for every video in the Video Library and Archive Browser. |
 | Subtitles | ✅ | Same-named `.srt` subtitle files are converted to WebVTT for video playback. |
 | Audio | ✅ | Browse and play `.mp3`, `.m4a`, and `.wav` files, including album artwork from `.png`, `.jpg`, or `.jpeg`. |
-| Playlists | ✅ | Play every video/audio file in a folder (including subfolders) as a queue, with a YouTube-style player-and-queue view, auto-advance, Fill-tab expand, and resume of the same track and position across navigation. |
+| Playlists | ✅ | Play every video/audio file in a folder (including subfolders) as a queue, with a YouTube-style player-and-queue view, auto-advance, Fill-tab expand, and resume of the same track and position across navigation. While an active playlist is open, transferable player preferences (VR POV, saturation, volume/mute, speed, subtitles, and Fill-tab) carry between applicable entries; loops, A/B points, crop, audio-track choice, and camera view stay per item. |
 | Images | ✅ | Browse and view `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, and `.ico` raster images in the archive carousel; SVG remains unsupported. |
 | Comics | ✅ | Browse and read `.cbz` comics as read-only, single-page viewers with bounded ZIP safety limits and automatic reading-position restore. |
 | Books | ✅ | Read `.epub` books with progress, highlights, and notes. |

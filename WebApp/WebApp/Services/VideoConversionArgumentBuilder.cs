@@ -12,7 +12,14 @@ internal sealed class VideoConversionArgumentBuilder
         var profile = job.Profile;
         if (profile.Action == MediaAction.Remux) return FfmpegVideoConversionGenerator.BuildArguments(source, output, MediaAction.Remux, fallbackCrf);
         var isBitmapSubtitle = profile.SelectedSubtitle?.Codec is "dvd_subtitle" or "hdmv_pgs_subtitle";
-        var subtitleOrdinal = profile.SelectedSubtitle is null ? -1 : job.Probe.SubtitleStreams!.Select((stream, index) => (stream, index)).Single(x => x.stream.InputStreamIndex == profile.SelectedSubtitle.InputStreamIndex).index;
+        var subtitleOrdinal = profile.SelectedSubtitle?.InputStreamIndex ?? -1;
+        if (profile.SelectedSubtitle is not null && job.Probe.SubtitleStreams is { } subtitleStreams)
+        {
+            subtitleOrdinal = subtitleStreams
+                .Select((stream, index) => (stream, index))
+                .Single(x => x.stream.InputStreamIndex == profile.SelectedSubtitle.InputStreamIndex)
+                .index;
+        }
         var subtitleFilter = profile.SelectedSubtitle is null || isBitmapSubtitle ? "" : $"subtitles=filename='{EscapeFilterValue(source)}':si={subtitleOrdinal},";
         if (profile.BurnClosedCaptions && !string.IsNullOrWhiteSpace(closedCaptionPath)) subtitleFilter += $"subtitles=filename='{EscapeFilterValue(closedCaptionPath)}',";
         var args = new List<string> { "-nostdin", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-i", source };

@@ -172,6 +172,7 @@
     private IJSObjectReference? _vrModule;
     private bool _pendingVrStart;
     private bool _pendingVrStop;
+    private bool _startVrAfterMetadata;
     private ElementReference _viewport;
     private ElementReference _video;
     private IJSObjectReference? _module;
@@ -338,6 +339,20 @@
 
     protected override void OnParametersSet()
     {
+        SynchronizeSelection();
+    }
+
+    protected override bool ShouldRender()
+    {
+        // PlayerState is a stable scoped object. Track changes initiated by this component
+        // can request a render without supplying new parameters, so check the selected ID
+        // immediately before every render as well as during parameter binding.
+        SynchronizeSelection();
+        return true;
+    }
+
+    private void SynchronizeSelection()
+    {
         if (!string.Equals(_frame.SelectionId, Selected?.Id, StringComparison.Ordinal))
         {
             HandleSelectionChanged();
@@ -346,12 +361,42 @@
 
     private void HandleSelectionChanged()
     {
+        var retainPlaylistPreferences = _frame.SelectionId is not null && PlayerState.PlaylistPreferences.IsActive;
+        if (retainPlaylistPreferences)
+        {
+            if (PlayerState.IsMusic)
+            {
+                PlayerState.PlaylistPreferences.CaptureAudioPreferences(
+                    _player.Volume,
+                    _player.IsMuted,
+                    _player.PlaybackRate,
+                    _fillTab.IsActive);
+            }
+            else
+            {
+                PlayerState.PlaylistPreferences.Capture(
+                    _vrPov.IsActive,
+                    _saturation.Value,
+                    _player.Volume,
+                    _player.IsMuted,
+                    _player.PlaybackRate,
+                    _player.IsSubtitlesEnabled,
+                    _fillTab.IsActive);
+            }
+        }
+
         _frame.Select(Selected?.Id);
         _player.Select(Selected?.Id);
         _saturation.Select(Selected?.Id);
-        _pendingFillTabCleanup |= _fillTab.Select(Selected?.Id);
+        _pendingFillTabCleanup |= _fillTab.Select(Selected?.Id, retainPlaylistPreferences && PlayerState.PlaylistPreferences.IsFillTabActive);
         _pendingVrStop |= _vrPov.Select(Selected?.Id);
         _pendingVrStart = false;
+        _startVrAfterMetadata = false;
+        if (retainPlaylistPreferences)
+        {
+            RestorePlaylistPreferences();
+        }
+
         _drag = null;
         _playbackError = false;
         _playerError = null;
@@ -366,6 +411,25 @@
         _controlInteractionActive = false;
         _controlHoverActive = false;
         CancelControlsHideTimer();
+    }
+
+    private void RestorePlaylistPreferences()
+    {
+        var preferences = PlayerState.PlaylistPreferences;
+        _player.RestorePlaybackPreferences(
+            preferences.Volume,
+            preferences.IsMuted,
+            preferences.PlaybackRate,
+            PlayerState.IsMusic ? true : preferences.IsSubtitlesEnabled);
+
+        if (PlayerState.IsMusic)
+        {
+            return;
+        }
+
+        _saturation.Restore(preferences.Saturation);
+        _vrPov.Restore(preferences.IsVrPovEnabled);
+        _startVrAfterMetadata = preferences.IsVrPovEnabled;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -454,6 +518,7 @@
         else
         {
             _pendingVrStart = false;
+            _startVrAfterMetadata = false;
             await StopVrPovRendererAsync();
         }
     }
@@ -473,6 +538,17 @@
         if (!started)
         {
             _vrPov.Exit();
+            if (PlayerState.PlaylistPreferences.IsActive)
+            {
+                PlayerState.PlaylistPreferences.Capture(
+                    false,
+                    _saturation.Value,
+                    _player.Volume,
+                    _player.IsMuted,
+                    _player.PlaybackRate,
+                    _player.IsSubtitlesEnabled,
+                    _fillTab.IsActive);
+            }
             _playerError = "VR POV needs WebGL, which this browser or device doesn’t support.";
             RevealControls();
             StateHasChanged();
@@ -601,6 +677,13 @@
     private async Task HandleLoadedMetadataAsync()
     {
         _playbackError = false;
+
+        if (!PlayerState.IsMusic && _startVrAfterMetadata)
+        {
+            _startVrAfterMetadata = false;
+            _vrPov.Restore(true);
+            _pendingVrStart = true;
+        }
 
         if (_pendingResumeTime > 0)
         {

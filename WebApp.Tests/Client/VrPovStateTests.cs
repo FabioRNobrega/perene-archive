@@ -59,6 +59,19 @@ public sealed class VrPovStateTests
         Assert.False(state.IsActive);
     }
 
+    [Fact]
+    public void Restore_reactivates_playlist_intent_after_a_new_video_selection()
+    {
+        var state = new VrPovState();
+        state.Select("video-one");
+        state.Toggle();
+
+        state.Select("video-two");
+        state.Restore(true);
+
+        Assert.True(state.IsActive);
+    }
+
     [Theory]
     [InlineData(false, true)]
     [InlineData(true, false)]

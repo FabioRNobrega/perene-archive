@@ -22,6 +22,8 @@ public sealed class SaturationState
         Value = Math.Clamp(value, 0, Max);
     }
 
+    public void Restore(double value) => SetValue(value);
+
     public void Reset()
     {
         Value = Default;

@@ -60,4 +60,16 @@ public sealed class SaturationStateTests
 
         Assert.Equal(100, state.Value);
     }
+
+    [Fact]
+    public void Restore_applies_a_clamped_playlist_value_after_selection_changes()
+    {
+        var state = new SaturationState();
+        state.Select("first");
+        state.Select("second");
+
+        state.Restore(350);
+
+        Assert.Equal(SaturationState.Max, state.Value);
+    }
 }

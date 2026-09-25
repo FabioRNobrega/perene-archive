@@ -9,6 +9,7 @@ public sealed class PersistentPlayerState
     public const string CompositionStreamBasePath = "api/compositions";
     public event Action? StateChanged;
     public event Action? CutQueued;
+    public PlaylistPlayerPreferencesState PlaylistPreferences { get; } = new();
 
     public VideoItemDto? Selected { get; private set; }
     public PersistentMediaKind MediaKind { get; private set; }
@@ -87,6 +88,7 @@ public sealed class PersistentPlayerState
             playlist.Add(ToMusicPlaylistTrack(item));
         }
 
+        PlaylistPreferences.Clear();
         PlaylistCategory = null;
         PlaylistFolderId = null;
         PlaylistFolderName = null;
@@ -99,6 +101,8 @@ public sealed class PersistentPlayerState
         ArgumentException.ThrowIfNullOrWhiteSpace(folderId);
         ArgumentException.ThrowIfNullOrWhiteSpace(folderName);
         ArgumentNullException.ThrowIfNull(items);
+
+        PlaylistPreferences.Begin(category, folderId);
 
         var playlist = items
             .Where(item => item.IsVideo || (item.IsMusic && !string.IsNullOrWhiteSpace(item.AudioUrl)))
@@ -142,6 +146,7 @@ public sealed class PersistentPlayerState
         }
 
         PlaylistViewActive = false;
+        PlaylistPreferences.Clear();
         NotifyStateChanged();
     }
 
@@ -188,6 +193,7 @@ public sealed class PersistentPlayerState
             throw new ArgumentException("A stream base path is required.", nameof(streamBasePath));
         }
 
+        PlaylistPreferences.Clear();
         Selected = item;
         StreamBasePath = streamBasePath;
         MediaKind = PersistentMediaKind.Video;
@@ -215,6 +221,7 @@ public sealed class PersistentPlayerState
 
     public void Clear()
     {
+        PlaylistPreferences.Clear();
         Selected = null;
         StreamBasePath = VideoStreamBasePath;
         MediaKind = PersistentMediaKind.Video;
