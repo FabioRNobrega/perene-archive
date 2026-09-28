@@ -48,6 +48,26 @@ internal sealed class EpubHighlightService(IOptions<ArchiveRootOptions> options)
         finally { _fileLock.Release(); }
     }
 
+    public async Task<bool> RemoveHighlightAsync(
+        string categoryKey, string itemId, long? sizeBytes, DateTime lastWriteTimeUtc, string highlightId, CancellationToken cancellationToken)
+    {
+        var key = ComputeKey(categoryKey, itemId, sizeBytes, lastWriteTimeUtc);
+        await _fileLock.WaitAsync(cancellationToken);
+        try
+        {
+            var entries = await ReadAllUnlockedAsync(cancellationToken);
+            if (!entries.TryGetValue(key, out var highlights)) return false;
+
+            var removed = highlights.RemoveAll(highlight => string.Equals(highlight.Id, highlightId, StringComparison.Ordinal)) > 0;
+            if (!removed) return false;
+
+            if (highlights.Count == 0) entries.Remove(key);
+            await WriteAllUnlockedAsync(entries, cancellationToken);
+            return true;
+        }
+        finally { _fileLock.Release(); }
+    }
+
     private async Task<Dictionary<string, List<BookHighlightDto>>> ReadAllUnlockedAsync(CancellationToken cancellationToken)
     {
         var path = Path.Combine(_archiveRootPath, "Books", "Notes", HighlightsFileName);

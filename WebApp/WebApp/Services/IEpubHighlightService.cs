@@ -9,4 +9,7 @@ internal interface IEpubHighlightService
 
     Task SaveHighlightAsync(
         string categoryKey, string itemId, long? sizeBytes, DateTime lastWriteTimeUtc, BookHighlightDto highlight, CancellationToken cancellationToken);
+
+    Task<bool> RemoveHighlightAsync(
+        string categoryKey, string itemId, long? sizeBytes, DateTime lastWriteTimeUtc, string highlightId, CancellationToken cancellationToken);
 }

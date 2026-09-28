@@ -246,21 +246,42 @@
              style="@SelectionMenuStyle"
              role="toolbar"
              aria-label="Selected text actions">
-            <button class="btn btn-primary d-inline-flex align-items-center gap-2"
-                    type="button"
-                    disabled="@_isSavingNote"
-                    @onpointerdown:preventDefault="true"
-                    @onclick="SaveNoteAsync">
-                @if (_isSavingNote)
-                {
-                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                }
-                else
-                {
-                    <i class="bi bi-bookmark-star" aria-hidden="true"></i>
-                }
-                Save Note
-            </button>
+            @if (_selectedHighlight is not null)
+            {
+                <button class="btn btn-danger d-inline-flex align-items-center gap-2"
+                        type="button"
+                        disabled="@_isSavingNote"
+                        @onpointerdown:preventDefault="true"
+                        @onclick="RemoveNoteAsync">
+                    @if (_isSavingNote)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-bookmark-x" aria-hidden="true"></i>
+                    }
+                    Remove Note
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-primary d-inline-flex align-items-center gap-2"
+                        type="button"
+                        disabled="@_isSavingNote"
+                        @onpointerdown:preventDefault="true"
+                        @onclick="SaveNoteAsync">
+                    @if (_isSavingNote)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-bookmark-star" aria-hidden="true"></i>
+                    }
+                    Save Note
+                </button>
+            }
             <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
                     type="button"
                     @onpointerdown:preventDefault="true"
@@ -301,6 +322,7 @@
     private BookDto? _book;
     private BookChapterDto? _chapter;
     private IReadOnlyList<BookHighlightDto> _highlights = [];
+    private BookHighlightDto? _selectedHighlight;
     private bool _isLoadingBook;
     private bool _isLoadingChapter;
     private bool _isSavingNote;
@@ -480,6 +502,7 @@
         _book = null;
         _chapter = null;
         _highlights = [];
+        _selectedHighlight = null;
         _error = null;
         _statusMessage = null;
         _selectedText = string.Empty;
@@ -928,9 +951,27 @@
     public Task GoToPreviousPageFromInputAsync() => GoToPreviousPageAsync();
 
     [JSInvokable]
-    public Task UpdateSelectionFromBrowserAsync(string selectedText, double menuLeft, double menuTop, bool menuAbove)
+    public Task UpdateSelectionFromBrowserAsync(string selectedText, int textOffsetStart, int textOffsetEnd, double menuLeft, double menuTop, bool menuAbove)
     {
         _selectedText = selectedText.Trim();
+        _selectedHighlight = _chapter is null ? null : _highlights.SingleOrDefault(highlight =>
+            string.Equals(highlight.ChapterId, _chapter.ChapterId, StringComparison.Ordinal) &&
+            highlight.TextOffsetStart == textOffsetStart &&
+            highlight.TextOffsetEnd == textOffsetEnd &&
+            string.Equals(highlight.SelectedText, _selectedText, StringComparison.Ordinal));
+        _selectionMenuLeft = Math.Max(0, menuLeft);
+        _selectionMenuTop = Math.Max(0, menuTop);
+        _selectionMenuAbove = menuAbove;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task SelectSavedHighlightFromBrowserAsync(string highlightId, double menuLeft, double menuTop, bool menuAbove)
+    {
+        _selectedHighlight = _chapter is null ? null : _highlights.SingleOrDefault(highlight =>
+            string.Equals(highlight.Id, highlightId, StringComparison.Ordinal) &&
+            string.Equals(highlight.ChapterId, _chapter.ChapterId, StringComparison.Ordinal));
+        _selectedText = _selectedHighlight?.SelectedText ?? string.Empty;
         _selectionMenuLeft = Math.Max(0, menuLeft);
         _selectionMenuTop = Math.Max(0, menuTop);
         _selectionMenuAbove = menuAbove;
@@ -946,6 +987,7 @@
         }
 
         _selectedText = string.Empty;
+        _selectedHighlight = null;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -993,6 +1035,42 @@
         catch (Exception exception) when (exception is HttpRequestException or JSException)
         {
             ShowStatus("The note could not be saved.");
+        }
+        finally
+        {
+            _isSavingNote = false;
+        }
+    }
+
+    private async Task RemoveNoteAsync()
+    {
+        if (_selectedHighlight is null || _isSavingNote)
+        {
+            return;
+        }
+
+        _isSavingNote = true;
+        _statusMessage = null;
+        try
+        {
+            var url = $"api/archive/{Uri.EscapeDataString(Category)}/items/{Uri.EscapeDataString(ItemId)}/book/notes/{Uri.EscapeDataString(_selectedHighlight.Id)}";
+            using var response = await Http.DeleteAsync(url);
+            if (response.IsSuccessStatusCode)
+            {
+                ShowStatus("Note removed.");
+                await ClearCapturedSelectionAsync(clearNativeSelection: true);
+                await LoadHighlightsAsync();
+                _pendingHighlightApply = true;
+                await InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                ShowStatus("The note could not be removed.");
+            }
+        }
+        catch (HttpRequestException)
+        {
+            ShowStatus("The note could not be removed.");
         }
         finally
         {
@@ -1052,6 +1130,7 @@
     private async Task ClearCapturedSelectionAsync(bool clearNativeSelection)
     {
         _selectedText = string.Empty;
+        _selectedHighlight = null;
         _selectionMenuLeft = 0;
         _selectionMenuTop = 0;
         _selectionMenuAbove = false;

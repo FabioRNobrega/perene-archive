@@ -1079,6 +1079,13 @@ public sealed class ArchiveEndpointsTests
         Assert.Equal(selectedText, highlight.SelectedText);
         Assert.Equal(start, highlight.TextOffsetStart);
         Assert.True(File.Exists(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookHighlights.json")));
+
+        using var removed = await client.DeleteAsync(
+            $"/api/archive/books/items/{book.Id}/book/notes/{highlight.Id}");
+        Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
+        Assert.DoesNotContain(selectedText, await File.ReadAllTextAsync(notesPath));
+        Assert.Empty((await client.GetFromJsonAsync<List<BookHighlightDto>>(
+            $"/api/archive/books/items/{book.Id}/book/highlights"))!);
     }
 
     [Fact]

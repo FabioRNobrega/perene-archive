@@ -35,6 +35,21 @@ public sealed class EpubHighlightServiceTests
         Assert.Equal(10, (await service.LoadHighlightsAsync("books", "item-1", 1, LastWriteTimeUtc, CancellationToken.None)).Count);
     }
 
+    [Fact]
+    public async Task RemoveHighlightAsync_removes_only_the_requested_highlight()
+    {
+        using var root = new TemporaryDirectory();
+        var service = new EpubHighlightService(Options.Create(new ArchiveRootOptions { Path = root.Path }));
+        var first = new BookHighlightDto("highlight-1", "0", 4, 12, "first", "", "", DateTimeOffset.UtcNow);
+        var second = new BookHighlightDto("highlight-2", "0", 20, 28, "second", "", "", DateTimeOffset.UtcNow);
+        await service.SaveHighlightAsync("books", "item-1", 1024, LastWriteTimeUtc, first, CancellationToken.None);
+        await service.SaveHighlightAsync("books", "item-1", 1024, LastWriteTimeUtc, second, CancellationToken.None);
+
+        Assert.True(await service.RemoveHighlightAsync("books", "item-1", 1024, LastWriteTimeUtc, first.Id, CancellationToken.None));
+        Assert.False(await service.RemoveHighlightAsync("books", "item-1", 1024, LastWriteTimeUtc, first.Id, CancellationToken.None));
+        Assert.Equal(second, Assert.Single(await service.LoadHighlightsAsync("books", "item-1", 1024, LastWriteTimeUtc, CancellationToken.None)));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory() { Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"video-manager-epub-highlight-{Guid.NewGuid():N}"); Directory.CreateDirectory(Path); }

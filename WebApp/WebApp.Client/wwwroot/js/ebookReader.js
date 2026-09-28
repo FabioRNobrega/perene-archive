@@ -62,7 +62,7 @@ function isTapGesture(maxDistance, durationMs) {
 }
 
 function isInteractiveTarget(target) {
-    return !!target?.closest?.("a, button, input, select, textarea");
+    return !!target?.closest?.("a, button, input, select, textarea, .epub-saved-highlight");
 }
 
 function resolveZone(container, clientX) {
@@ -191,6 +191,11 @@ function getSelectionDetails(container) {
         return null;
     }
 
+    const chapter = container.querySelector(".epub-chapter");
+    if (!chapter || !chapter.contains(range.commonAncestorContainer)) {
+        return null;
+    }
+
     const text = selection.toString().trim();
     // Anchor outside the entire selection so the actions never cover any line in a multi-line
     // passage. The browser's union rectangle gives us the first and last selected line.
@@ -198,6 +203,10 @@ function getSelectionDetails(container) {
     if (!text || (rect.width === 0 && rect.height === 0)) {
         return null;
     }
+
+    const rawText = chapter.textContent ?? "";
+    const textOffsetStart = normalizedOffset(rawText, rawOffsetForBoundary(chapter, range.startContainer, range.startOffset));
+    const textOffsetEnd = normalizedOffset(rawText, rawOffsetForBoundary(chapter, range.endContainer, range.endOffset));
 
     const menuWidth = Math.min(
         SELECTION_MENU_ESTIMATED_WIDTH_PX,
@@ -213,6 +222,8 @@ function getSelectionDetails(container) {
 
     return {
         text,
+        textOffsetStart,
+        textOffsetEnd,
         left,
         top: menuAbove ? rect.top - SELECTION_MENU_EDGE_MARGIN_PX : rect.bottom + SELECTION_MENU_EDGE_MARGIN_PX,
         menuAbove
@@ -335,6 +346,7 @@ export function applyHighlights(container, highlights) {
                 const after = node.nodeValue.slice(overlapEnd - position);
                 const mark = document.createElement("mark");
                 mark.className = "epub-saved-highlight";
+                mark.dataset.highlightId = highlight.id;
                 mark.textContent = selected;
                 node.replaceWith(document.createTextNode(before), mark, document.createTextNode(after));
             }
@@ -351,11 +363,16 @@ export function registerSelectionObserver(container, dotNetReference) {
     }
 
     let pendingFrame = null;
+    let savedHighlightMenuOpen = false;
     const notifySelection = () => {
         pendingFrame = null;
         const selection = getSelectionDetails(container);
+        if (!selection && savedHighlightMenuOpen) {
+            return;
+        }
+        savedHighlightMenuOpen = false;
         const invocation = selection
-            ? dotNetReference.invokeMethodAsync("UpdateSelectionFromBrowserAsync", selection.text, selection.left, selection.top, selection.menuAbove)
+            ? dotNetReference.invokeMethodAsync("UpdateSelectionFromBrowserAsync", selection.text, selection.textOffsetStart, selection.textOffsetEnd, selection.left, selection.top, selection.menuAbove)
             : dotNetReference.invokeMethodAsync("ClearSelectionFromBrowserAsync");
         invocation.catch(() => { });
     };
@@ -367,10 +384,30 @@ export function registerSelectionObserver(container, dotNetReference) {
         pendingFrame = window.requestAnimationFrame(notifySelection);
     };
 
+    const selectSavedHighlight = event => {
+        const highlight = event.target instanceof Element ? event.target.closest(".epub-saved-highlight[data-highlight-id]") : null;
+        if (!highlight || !container.contains(highlight)) {
+            savedHighlightMenuOpen = false;
+            return;
+        }
+
+        savedHighlightMenuOpen = true;
+        window.getSelection()?.removeAllRanges();
+        const rect = highlight.getBoundingClientRect();
+        const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+        const menuAbove = !isCoarsePointer && rect.top >= SELECTION_MENU_ESTIMATED_HEIGHT_PX + SELECTION_MENU_EDGE_MARGIN_PX;
+        const menuWidth = Math.min(SELECTION_MENU_ESTIMATED_WIDTH_PX, Math.max(0, window.innerWidth - (SELECTION_MENU_EDGE_MARGIN_PX * 2)));
+        const halfMenuWidth = menuWidth / 2;
+        const left = Math.min(Math.max(halfMenuWidth + SELECTION_MENU_EDGE_MARGIN_PX, rect.left + (rect.width / 2)), window.innerWidth - halfMenuWidth - SELECTION_MENU_EDGE_MARGIN_PX);
+        dotNetReference.invokeMethodAsync("SelectSavedHighlightFromBrowserAsync", highlight.dataset.highlightId, left,
+            menuAbove ? rect.top - SELECTION_MENU_EDGE_MARGIN_PX : rect.bottom + SELECTION_MENU_EDGE_MARGIN_PX, menuAbove).catch(() => { });
+    };
+
     document.addEventListener("selectionchange", scheduleSelectionNotification);
     container.addEventListener("pointerup", scheduleSelectionNotification);
     container.addEventListener("touchend", scheduleSelectionNotification);
-    selectionObserverHandlers = { container, scheduleSelectionNotification, pendingFrame: () => pendingFrame };
+    container.addEventListener("click", selectSavedHighlight);
+    selectionObserverHandlers = { container, scheduleSelectionNotification, selectSavedHighlight, pendingFrame: () => pendingFrame };
 }
 
 export function unregisterSelectionObserver() {
@@ -378,10 +415,11 @@ export function unregisterSelectionObserver() {
         return;
     }
 
-    const { container, scheduleSelectionNotification, pendingFrame } = selectionObserverHandlers;
+    const { container, scheduleSelectionNotification, selectSavedHighlight, pendingFrame } = selectionObserverHandlers;
     document.removeEventListener("selectionchange", scheduleSelectionNotification);
     container.removeEventListener("pointerup", scheduleSelectionNotification);
     container.removeEventListener("touchend", scheduleSelectionNotification);
+    container.removeEventListener("click", selectSavedHighlight);
     const frame = pendingFrame();
     if (frame !== null) {
         window.cancelAnimationFrame(frame);

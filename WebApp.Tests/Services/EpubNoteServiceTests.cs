@@ -12,7 +12,7 @@ public sealed class EpubNoteServiceTests
         using var root = new TemporaryDirectory();
         var service = CreateService(root.Path);
 
-        await service.AppendNoteAsync("My Book", "Some Author", 0, null, null, "A highlighted passage.", CancellationToken.None);
+        await service.AppendNoteAsync("note-1", "My Book", "Some Author", 0, null, null, "A highlighted passage.", CancellationToken.None);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
         Assert.True(File.Exists(notesPath));
@@ -24,7 +24,7 @@ public sealed class EpubNoteServiceTests
         using var root = new TemporaryDirectory();
         var service = CreateService(root.Path);
 
-        await service.AppendNoteAsync("My Book", "Some Author", 2, null, null, "A highlighted passage.", CancellationToken.None);
+        await service.AppendNoteAsync("note-1", "My Book", "Some Author", 2, null, null, "A highlighted passage.", CancellationToken.None);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
         var content = await File.ReadAllTextAsync(notesPath);
@@ -33,9 +33,10 @@ public sealed class EpubNoteServiceTests
         Assert.Equal("My Book (Some Author)", lines[0]);
         Assert.StartsWith("- Your Highlight on Chapter 3", lines[1]);
         Assert.Contains("Added on", lines[1]);
-        Assert.Equal(string.Empty, lines[2]);
-        Assert.Equal("A highlighted passage.", lines[3]);
-        Assert.Equal("==========", lines[4]);
+        Assert.Equal("- Perene Archive Note ID: note-1", lines[2]);
+        Assert.Equal(string.Empty, lines[3]);
+        Assert.Equal("A highlighted passage.", lines[4]);
+        Assert.Equal("==========", lines[5]);
     }
 
     [Fact]
@@ -44,7 +45,7 @@ public sealed class EpubNoteServiceTests
         using var root = new TemporaryDirectory();
         var service = CreateService(root.Path);
 
-        await service.AppendNoteAsync("My Book", null, 0, null, null, "Text", CancellationToken.None);
+        await service.AppendNoteAsync("note-1", "My Book", null, 0, null, null, "Text", CancellationToken.None);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
         var firstLine = (await File.ReadAllLinesAsync(notesPath))[0];
@@ -57,7 +58,7 @@ public sealed class EpubNoteServiceTests
         using var root = new TemporaryDirectory();
         var service = CreateService(root.Path);
 
-        await service.AppendNoteAsync("My Book", "Author", 1, 120, 180, "Text", CancellationToken.None);
+        await service.AppendNoteAsync("note-1", "My Book", "Author", 1, 120, 180, "Text", CancellationToken.None);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
         var metadataLine = (await File.ReadAllLinesAsync(notesPath))[1];
@@ -70,8 +71,8 @@ public sealed class EpubNoteServiceTests
         using var root = new TemporaryDirectory();
         var service = CreateService(root.Path);
 
-        await service.AppendNoteAsync("Book A", "Author A", 0, null, null, "First note.", CancellationToken.None);
-        await service.AppendNoteAsync("Book B", "Author B", 1, null, null, "Second note.", CancellationToken.None);
+        await service.AppendNoteAsync("note-1", "Book A", "Author A", 0, null, null, "First note.", CancellationToken.None);
+        await service.AppendNoteAsync("note-2", "Book B", "Author B", 1, null, null, "Second note.", CancellationToken.None);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
         var content = await File.ReadAllTextAsync(notesPath);
@@ -91,7 +92,7 @@ public sealed class EpubNoteServiceTests
 
         var tasks = Enumerable.Range(0, concurrentWrites)
             .Select(index => service.AppendNoteAsync(
-                $"Book {index}", "Author", index, null, null, $"Selected text number {index}.", CancellationToken.None));
+                $"note-{index}", $"Book {index}", "Author", index, null, null, $"Selected text number {index}.", CancellationToken.None));
         await Task.WhenAll(tasks);
 
         var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
@@ -103,6 +104,24 @@ public sealed class EpubNoteServiceTests
         {
             Assert.Contains($"Selected text number {index}.", content);
         }
+    }
+
+    [Fact]
+    public async Task RemoveNoteAsync_removes_only_the_matching_note()
+    {
+        using var root = new TemporaryDirectory();
+        var service = CreateService(root.Path);
+        await service.AppendNoteAsync("note-1", "Book A", "Author", 0, null, null, "First note.", CancellationToken.None);
+        await service.AppendNoteAsync("note-2", "Book B", "Author", 1, null, null, "Second note.", CancellationToken.None);
+
+        Assert.True(await service.RemoveNoteAsync("note-1", CancellationToken.None));
+        Assert.False(await service.RemoveNoteAsync("missing", CancellationToken.None));
+
+        var content = await File.ReadAllTextAsync(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt"));
+        Assert.DoesNotContain("First note.", content);
+        Assert.DoesNotContain("note-1", content);
+        Assert.Contains("Second note.", content);
+        Assert.Contains("note-2", content);
     }
 
     private static EpubNoteService CreateService(string archiveRootPath) =>

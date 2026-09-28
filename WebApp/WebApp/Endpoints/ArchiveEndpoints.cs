@@ -48,6 +48,7 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/cover", GetBookCover);
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/chapters/{chapterId}", GetBookChapter);
         endpoints.MapPost("/api/archive/{category}/items/{id}/book/notes", SaveBookNoteAsync);
+        endpoints.MapDelete("/api/archive/{category}/items/{id}/book/notes/{noteId}", RemoveBookNoteAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/highlights", GetBookHighlightsAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/progress", GetBookProgressAsync);
         endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync);
@@ -1185,6 +1186,7 @@ internal static class ArchiveEndpoints
             await highlightService.SaveHighlightAsync(
                 item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, highlight, cancellationToken);
             await noteService.AppendNoteAsync(
+                highlight.Id,
                 book.Title,
                 book.Author,
                 chapterIndex,
@@ -1204,6 +1206,47 @@ internal static class ArchiveEndpoints
                 title: "The note could not be saved.",
                 detail: "The note file could not be written.",
                 statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task<IResult> RemoveBookNoteAsync(
+        string category,
+        string id,
+        string noteId,
+        IArchiveService archive,
+        IEpubNoteService noteService,
+        IEpubHighlightService highlightService,
+        CancellationToken cancellationToken)
+    {
+        if (!archive.TryResolveBook(category, id, out var item) || item is null)
+        {
+            return Results.NotFound();
+        }
+
+        var highlights = await highlightService.LoadHighlightsAsync(
+            item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+        if (!highlights.Any(highlight => string.Equals(highlight.Id, noteId, StringComparison.Ordinal)))
+        {
+            return Results.NotFound();
+        }
+
+        try
+        {
+            if (!await noteService.RemoveNoteAsync(noteId, cancellationToken) ||
+                !await highlightService.RemoveHighlightAsync(item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, noteId, cancellationToken))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.Ok();
+        }
+        catch (OperationCanceledException)
+        {
+            return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Results.Problem(title: "The note could not be removed.", detail: "The note file could not be written.", statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
