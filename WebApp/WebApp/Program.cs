@@ -180,6 +180,7 @@ builder.Services.AddSingleton<IEpubContentSanitizer, EpubContentSanitizer>();
 builder.Services.AddSingleton<IEpubBookService, EpubBookService>();
 builder.Services.AddSingleton<IEpubNoteService, EpubNoteService>();
 builder.Services.AddSingleton<IEpubProgressService, EpubProgressService>();
+builder.Services.AddSingleton<IEpubReaderThemeService, EpubReaderThemeService>();
 builder.Services.AddSingleton<IComicProgressService, ComicProgressService>();
 builder.Services.AddSingleton<IEpubHighlightService, EpubHighlightService>();
 builder.Services.AddSingleton<ITextDocumentService, TextDocumentService>();

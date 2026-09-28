@@ -12,6 +12,11 @@ internal static class ArchiveEndpoints
 {
     public static IEndpointRouteBuilder MapArchiveEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/books/reader-themes", GetReaderThemesAsync);
+        endpoints.MapPut("/api/books/reader-themes/active", SaveActiveReaderThemeAsync);
+        endpoints.MapPost("/api/books/reader-themes", CreateReaderThemeAsync);
+        endpoints.MapPut("/api/books/reader-themes/{themeId}", UpdateReaderThemeAsync);
+        endpoints.MapDelete("/api/books/reader-themes/{themeId}", DeleteReaderThemeAsync);
         endpoints.MapGet("/api/archive/{category}/items", List);
         endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync);
         endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist);
@@ -63,6 +68,36 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/jobs", GetJobs);
         return endpoints;
     }
+
+    private static async Task<IResult> GetReaderThemesAsync(IEpubReaderThemeService themes, CancellationToken cancellationToken)
+    {
+        try { return Results.Ok(await themes.LoadAsync(cancellationToken)); }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return ThemeStorageProblem(); }
+    }
+    private static Task<IResult> SaveActiveReaderThemeAsync(BookReaderThemeSettingsDto settings, IEpubReaderThemeService themes, CancellationToken cancellationToken) => ThemeMutationAsync(() => themes.SaveActiveAsync(settings, cancellationToken));
+    private static Task<IResult> CreateReaderThemeAsync(CreateBookReaderThemeRequest request, IEpubReaderThemeService themes, CancellationToken cancellationToken) => ThemeMutationAsync(() => themes.CreateAsync(request, cancellationToken));
+    private static async Task<IResult> UpdateReaderThemeAsync(string themeId, UpdateBookReaderThemeRequest request, IEpubReaderThemeService themes, CancellationToken cancellationToken)
+    {
+        try { var result = await themes.UpdateAsync(themeId, request, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return ThemeStorageProblem(); }
+    }
+    private static async Task<IResult> DeleteReaderThemeAsync(string themeId, IEpubReaderThemeService themes, CancellationToken cancellationToken)
+    {
+        try { var result = await themes.DeleteAsync(themeId, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return ThemeStorageProblem(); }
+    }
+    private static async Task<IResult> ThemeMutationAsync(Func<Task<BookReaderThemeLibraryDto>> mutation)
+    {
+        try { return Results.Ok(await mutation()); }
+        catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+        catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return ThemeStorageProblem(); }
+    }
+    private static IResult ThemeStorageProblem() => Results.Problem(title: "Reader themes could not be saved.", detail: "The theme preferences could not be written.", statusCode: StatusCodes.Status500InternalServerError);
 
     private static async Task<IResult> PreviewConversionAsync(string category, string id, VideoConversionSelectionDto? requestedSelection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IOptions<VideoConversionOptions> options, CancellationToken cancellationToken)
     {

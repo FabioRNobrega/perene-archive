@@ -1,7 +1,7 @@
 .epub-reader {
     z-index: 4;
-    background-color: var(--bs-body-bg);
-    color: var(--bs-body-color);
+    background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
+    color: var(--epub-reader-surface-color, var(--bs-body-color));
 }
 
 .epub-reader-toolbars {
@@ -72,6 +72,7 @@
     /* Flex children need an explicit min-height to allow their own overflow/scroll instead of growing the row. */
     min-height: 0;
     position: relative;
+    background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
 }
 
 .epub-reader-toc {
@@ -115,11 +116,12 @@
     position: relative;
     padding: 1rem;
     padding-inline: var(--epub-reader-inline-padding, 5%);
+    background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
 }
 
 @media (min-width: 48rem) {
     .epub-reader-page-frame {
-        padding-inline: var(--epub-reader-inline-padding, 25%);
+        padding-inline: var(--epub-reader-inline-padding, 5%);
     }
 }
 
@@ -127,9 +129,12 @@
     position: relative;
     --epub-reader-page-gap: clamp(2rem, 6vw, 5rem);
     padding-bottom: 4.5rem;
+    box-sizing: border-box;
     touch-action: pan-y;
     user-select: text;
     scrollbar-width: none;
+    background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
+    color: var(--epub-reader-surface-color, var(--bs-body-color));
 }
 
 .epub-reader-content::-webkit-scrollbar {
@@ -142,6 +147,7 @@
     right: 0;
     bottom: 0;
     left: 0;
+    background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
 }
 
 .epub-reader-progress-value {
@@ -157,6 +163,14 @@
     overflow: visible;
     orphans: 2;
     widows: 2;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    white-space: normal;
+}
+
+.epub-chapter ::deep * {
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
 }
 
 .epub-chapter ::deep img,
@@ -166,14 +180,26 @@
     height: auto;
 }
 
-.epub-chapter ::deep p,
 .epub-chapter ::deep blockquote,
 .epub-chapter ::deep figure,
 .epub-chapter ::deep pre,
 .epub-chapter ::deep table,
+.epub-chapter ::deep img,
+.epub-chapter ::deep video,
+.epub-chapter ::deep svg {
+    break-inside: avoid;
+}
+
+/* Paragraphs and lists must be free to continue in the next column/page. */
+.epub-chapter ::deep p,
 .epub-chapter ::deep ul,
 .epub-chapter ::deep ol {
-    break-inside: avoid;
+    break-inside: auto;
+}
+
+/* EPUB prose needs its own right-edge safety inset within each paginated column. */
+.epub-chapter ::deep p {
+    margin-right: 5%;
 }
 
 .epub-chapter ::deep h1,

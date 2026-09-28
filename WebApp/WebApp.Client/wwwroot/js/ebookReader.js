@@ -411,17 +411,20 @@ export async function copyText(text) {
 }
 
 export function getDefaultContentPaddingPercent() {
-    return window.matchMedia("(max-width: 47.98rem)").matches ? 5 : 25;
+    return 5;
 }
 
 // Reserve a couple of CSS pixels inside the column edge so sub-pixel rounding
 // between the measured container width and the browser's actual (fractional)
 // column layout never clips a glyph at the page boundary.
-const PAGE_WIDTH_SAFETY_MARGIN_PX = 2;
+const PAGE_WIDTH_SAFETY_MARGIN_PX = 6;
 
 function getPageMetrics(container) {
-    const preciseWidth = container.getBoundingClientRect().width;
-    const pageWidth = Math.max(1, Math.floor(preciseWidth) - PAGE_WIDTH_SAFETY_MARGIN_PX);
+    // clientWidth is the actual inner pagination area after scrollbar/padding calculations.
+    // Use the same integer width for the CSS column and every scroll stride so fractional layout
+    // rounding never places the final glyph beyond the clipped page boundary.
+    const innerWidth = container.clientWidth;
+    const pageWidth = Math.max(1, Math.floor(innerWidth) - PAGE_WIDTH_SAFETY_MARGIN_PX);
     container.style.setProperty("--epub-reader-page-width", `${pageWidth}px`);
 
     const chapter = container.querySelector(".epub-chapter");

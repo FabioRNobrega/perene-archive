@@ -4,6 +4,7 @@
 @inject IJSRuntime JS
 
 <section @ref="_readerRef" class="epub-reader card position-fixed top-0 start-0 w-100 h-100 overflow-hidden border-0 rounded-0 d-flex flex-column"
+         style="@ReaderSurfaceStyle"
          aria-label="Book reader">
     @if (_isToolbarCollapsed)
     {
@@ -41,10 +42,11 @@
                         data-bs-auto-close="outside"
                         aria-expanded="false"
                         aria-label="Text settings"
-                        title="Text settings">
+                        title="Text settings"
+                        @onclick="KeepToolbarVisible">
                     <i class="bi bi-type" aria-hidden="true"></i>
                 </button>
-                <div class="dropdown-menu dropdown-menu-end p-3 epub-reader-aa-panel" aria-labelledby="epub-reader-aa-toggle">
+                <div class="dropdown-menu dropdown-menu-end p-3 epub-reader-aa-panel" aria-labelledby="epub-reader-aa-toggle" @onfocusin="KeepToolbarVisible" @onpointerdown="KeepToolbarVisible">
                     <div class="mb-3">
                         <div class="small fw-semibold text-body-secondary mb-1">Text size</div>
                         <div class="btn-group w-100" role="group" aria-label="Font size">
@@ -90,25 +92,44 @@
 
                     <div class="mb-3">
                         <div class="small fw-semibold text-body-secondary mb-1">Margins</div>
-                        <div class="btn-group w-100" role="group" aria-label="Text width">
+                        <div class="btn-group w-100" role="group" aria-label="Margins">
                             <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
-                                    type="button"
-                                    disabled="@(_contentPaddingPercent >= MaxContentPaddingPercent)"
-                                    aria-label="Decrease text width"
-                                    title="Decrease text width"
-                                    @onclick="DecreaseTextWidth">
-                                <i class="bi bi-dash-lg" aria-hidden="true"></i>
-                            </button>
+                                type="button" disabled="@(_contentPaddingPercent <= MinContentPaddingPercent)" aria-label="Decrease margins" title="Decrease margins" @onclick="DecreaseMargins"><i class="bi bi-dash-lg" aria-hidden="true"></i></button>
                             <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
-                                    type="button"
-                                    disabled="@(_contentPaddingPercent <= MinContentPaddingPercent)"
-                                    aria-label="Increase text width"
-                                    title="Increase text width"
-                                    @onclick="IncreaseTextWidth">
-                                <i class="bi bi-plus-lg" aria-hidden="true"></i>
-                            </button>
+                                type="button" disabled="@(_contentPaddingPercent >= MaxContentPaddingPercent)" aria-label="Increase margins" title="Increase margins" @onclick="IncreaseMargins"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
                         </div>
                     </div>
+
+                    <div class="mb-3">
+                        <div class="small fw-semibold text-body-secondary mb-1">Colors</div>
+                        <div class="d-flex gap-2">
+                            <label class="form-label small mb-0 flex-grow-1" for="epub-reader-foreground">Text<input id="epub-reader-foreground" class="form-control form-control-color w-100" type="color" value="@(_foregroundColor ?? InheritedForegroundColor)" @onchange="OnForegroundChanged" /></label>
+                            <label class="form-label small mb-0 flex-grow-1" for="epub-reader-background">Background<input id="epub-reader-background" class="form-control form-control-color w-100" type="color" value="@(_backgroundColor ?? InheritedBackgroundColor)" @onchange="OnBackgroundChanged" /></label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 d-flex align-items-center gap-2">
+                        <span class="small text-body-secondary flex-grow-1">@ThemeStateLabel</span>
+                        <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@_isThemeBusy" @onclick="ResetThemeAsync">Default</button>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="small fw-semibold text-body-secondary mb-1" for="epub-reader-saved-theme">Saved theme</label>
+                        <select id="epub-reader-saved-theme" class="form-select form-select-sm" value="@(_themeLibrary?.SelectedThemeId ?? "")" disabled="@_isThemeBusy" @onchange="ApplyThemeAsync">
+                            <option value="">Custom / Default</option>
+                            @foreach (var theme in _themeLibrary?.Themes ?? []) { <option value="@theme.Id">@theme.Name</option> }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="visually-hidden" for="epub-reader-theme-name">Theme name</label>
+                        <div class="input-group input-group-sm"><input id="epub-reader-theme-name" class="form-control" placeholder="Theme name" @bind="_themeName" maxlength="60" disabled="@_isThemeBusy" /><button class="btn btn-secondary" type="button" disabled="@_isThemeBusy" @onclick="SaveNewThemeAsync">Save new</button></div>
+                    </div>
+                    @if (_themeLibrary?.SelectedThemeId is not null)
+                    {
+                        <div class="d-flex flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" type="button" disabled="@_isThemeBusy" @onclick="UpdateThemeAsync">Update</button><button class="btn btn-outline-secondary btn-sm" type="button" disabled="@_isThemeBusy" @onclick="RenameThemeAsync">Rename</button><button class="btn btn-outline-danger btn-sm" type="button" disabled="@_isThemeBusy" @onclick="DeleteThemeAsync">Delete</button></div>
+                    }
+                    @if (_themeFeedback is not null) { <div class="small @(_themeError ? "text-danger" : "text-body-secondary")" role="status" aria-live="polite">@_themeFeedback</div> }
+
                 </div>
             </div>
 
@@ -276,10 +297,19 @@
     private int _fontSizeIndex = 2;
     private string _fontFamily = "Montserrat";
     private int _lineHeightIndex = 1;
+    private string? _foregroundColor;
+    private string? _backgroundColor;
+    private BookReaderThemeLibraryDto? _themeLibrary;
+    private bool _themesLoaded;
+    private bool _isThemeBusy;
+    private bool _activeThemeSaveQueued;
+    private string _themeName = string.Empty;
+    private string? _themeFeedback;
+    private bool _themeError;
     private const int MinContentPaddingPercent = 5;
     private const int MaxContentPaddingPercent = 30;
     private const int ContentPaddingStepPercent = 5;
-    private const int DesktopDefaultContentPaddingPercent = 25;
+    private const int DesktopDefaultContentPaddingPercent = 5;
 
     private int _contentPaddingPercent = DesktopDefaultContentPaddingPercent;
     private string? _error;
@@ -294,6 +324,7 @@
     private IJSObjectReference? _module;
     private DotNetObjectReference<EpubReader>? _pageNavigationReference;
     private bool _isFullscreen;
+    private bool _isDarkApplicationTheme = true;
     private CancellationTokenSource? _statusCts;
     private CancellationTokenSource? _toolbarHideCts;
 
@@ -309,9 +340,15 @@
     private sealed record SelectionRange(int TextOffsetStart, int TextOffsetEnd, string SelectedText, string ContextBefore, string ContextAfter);
 
     private string ContentStyle => FormattableString.Invariant(
-        $"font-size: {FontSizesPx[_fontSizeIndex]}px; font-family: {FontFamilyStacks[_fontFamily]}; line-height: {LineHeights[_lineHeightIndex].Value};");
+        $"font-size: {FontSizesPx[_fontSizeIndex]}px; font-family: {FontFamilyStacks[_fontFamily]}; line-height: {LineHeights[_lineHeightIndex].Value}; color: {_foregroundColor ?? "var(--bs-body-color)"}; background-color: {_backgroundColor ?? "var(--bs-body-bg)"};");
+
+    private string ReaderSurfaceStyle => FormattableString.Invariant(
+        $"--epub-reader-surface-bg: {_backgroundColor ?? "var(--bs-body-bg)"}; --epub-reader-surface-color: {_foregroundColor ?? "var(--bs-body-color)"};");
 
     private string PageFrameStyle => FormattableString.Invariant($"--epub-reader-inline-padding: {_contentPaddingPercent}%;");
+    private string InheritedForegroundColor => _isDarkApplicationTheme ? "#C9D2CB" : "#4A4030";
+    private string InheritedBackgroundColor => _isDarkApplicationTheme ? "#0D1512" : "#EFE3C6";
+    private string ThemeStateLabel => _themeLibrary?.SelectedThemeId is { } id ? $"Selected: {_themeLibrary.Themes.FirstOrDefault(theme => theme.Id == id)?.Name}" : (_foregroundColor is null && _backgroundColor is null && _fontFamily == "Montserrat" && _fontSizeIndex == 2 && _lineHeightIndex == 1 ? "Default" : "Custom");
 
     private bool HasActionableSelection => !string.IsNullOrWhiteSpace(_selectedText);
 
@@ -354,6 +391,7 @@
 
         _loadedItemId = ItemId;
         ResetState();
+        await LoadThemesAsync();
         await LoadBookAsync();
     }
 
@@ -362,6 +400,7 @@
         if (firstRender)
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/ebookReader.js");
+            _isDarkApplicationTheme = string.Equals(await JS.InvokeAsync<string>("videoManagerTheme.getTheme"), "dark", StringComparison.Ordinal);
             _pageNavigationReference = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("registerFullscreenChange", _readerRef, _pageNavigationReference);
             await _module.InvokeVoidAsync("registerPageNavigation", _pageNavigationReference);
@@ -405,6 +444,8 @@
         _fontSizeIndex = 2;
         _fontFamily = "Montserrat";
         _lineHeightIndex = 1;
+        _foregroundColor = null;
+        _backgroundColor = null;
         _contentPaddingPercent = DesktopDefaultContentPaddingPercent;
         _contentPaddingDefaultPending = true;
         _pageIndex = 0;
@@ -568,6 +609,12 @@
         RequestPaginationReflow();
     }
 
+    private void KeepToolbarVisible()
+    {
+        _isToolbarCollapsed = false;
+        CancelAndDispose(ref _toolbarHideCts);
+    }
+
     private void ShowToolbar()
     {
         _isToolbarCollapsed = false;
@@ -588,21 +635,21 @@
         catch (OperationCanceledException) { }
     }
 
-    private void DecreaseTextWidth()
-    {
-        if (_contentPaddingPercent < MaxContentPaddingPercent)
-        {
-            _contentPaddingPercent = Math.Min(MaxContentPaddingPercent, _contentPaddingPercent + ContentPaddingStepPercent);
-            RequestPaginationReflow();
-        }
-    }
-
-    private void IncreaseTextWidth()
+    private void DecreaseMargins()
     {
         if (_contentPaddingPercent > MinContentPaddingPercent)
         {
             _contentPaddingPercent = Math.Max(MinContentPaddingPercent, _contentPaddingPercent - ContentPaddingStepPercent);
-            RequestPaginationReflow();
+            RequestPaginationReflow(); QueueActiveThemeSave();
+        }
+    }
+
+    private void IncreaseMargins()
+    {
+        if (_contentPaddingPercent < MaxContentPaddingPercent)
+        {
+            _contentPaddingPercent = Math.Min(MaxContentPaddingPercent, _contentPaddingPercent + ContentPaddingStepPercent);
+            RequestPaginationReflow(); QueueActiveThemeSave();
         }
     }
 
@@ -612,6 +659,7 @@
         {
             _fontSizeIndex--;
             RequestPaginationReflow();
+            QueueActiveThemeSave();
         }
     }
 
@@ -621,6 +669,7 @@
         {
             _fontSizeIndex++;
             RequestPaginationReflow();
+            QueueActiveThemeSave();
         }
     }
 
@@ -630,6 +679,7 @@
         {
             _fontFamily = value;
             RequestPaginationReflow();
+            QueueActiveThemeSave();
         }
     }
 
@@ -639,8 +689,53 @@
         {
             _lineHeightIndex = index;
             RequestPaginationReflow();
+            QueueActiveThemeSave();
         }
     }
+
+    private void OnForegroundChanged(ChangeEventArgs args) => SetColor(args.Value?.ToString(), true);
+    private void OnBackgroundChanged(ChangeEventArgs args) => SetColor(args.Value?.ToString(), false);
+    private void SetColor(string? color, bool foreground)
+    {
+        if (color is null || !System.Text.RegularExpressions.Regex.IsMatch(color, "^#[0-9A-Fa-f]{6}$")) return;
+        if (foreground) _foregroundColor = color.ToUpperInvariant(); else _backgroundColor = color.ToUpperInvariant();
+        RequestPaginationReflow(); QueueActiveThemeSave();
+    }
+
+    private BookReaderThemeSettingsDto CurrentThemeSettings => new(_fontFamily, FontSizesPx[_fontSizeIndex], LineHeights[_lineHeightIndex].Value, _foregroundColor, _backgroundColor, _contentPaddingPercent);
+    private async Task LoadThemesAsync()
+    {
+        if (_themesLoaded) return;
+        _themesLoaded = true;
+        try { var library = await Http.GetFromJsonAsync<BookReaderThemeLibraryDto>("api/books/reader-themes"); if (library is not null) ApplyThemeLibrary(library); }
+        catch (HttpRequestException) { _themeFeedback = "Reader appearance could not be restored."; _themeError = true; }
+    }
+    private void ApplyThemeLibrary(BookReaderThemeLibraryDto library)
+    {
+        _themeLibrary = library; var settings = library.ActiveSettings;
+        var font = Array.IndexOf(FontFamilyKeys.ToArray(), settings.FontFamily); var size = Array.IndexOf(FontSizesPx, settings.FontSizePx); var line = Array.FindIndex(LineHeights, item => item.Value == settings.LineHeight);
+        if (font >= 0 && size >= 0 && line >= 0) { _fontFamily = settings.FontFamily; _fontSizeIndex = size; _lineHeightIndex = line; _foregroundColor = settings.ForegroundColor; _backgroundColor = settings.BackgroundColor; _contentPaddingPercent = settings.ContentPaddingPercent ?? DesktopDefaultContentPaddingPercent; RequestPaginationReflow(); }
+    }
+    private void QueueActiveThemeSave() { _themeLibrary = _themeLibrary is null ? null : _themeLibrary with { SelectedThemeId = null, ActiveSettings = CurrentThemeSettings }; _activeThemeSaveQueued = true; _ = SaveActiveThemeAsync(); }
+    private async Task SaveActiveThemeAsync()
+    {
+        if (_isThemeBusy) return; _isThemeBusy = true;
+        try { while (_activeThemeSaveQueued) { _activeThemeSaveQueued = false; var settings = CurrentThemeSettings; using var response = await Http.PutAsJsonAsync("api/books/reader-themes/active", settings); if (response.IsSuccessStatusCode) { var library = await response.Content.ReadFromJsonAsync<BookReaderThemeLibraryDto>(); if (library is not null && settings == CurrentThemeSettings) _themeLibrary = library; } } }
+        catch (HttpRequestException) { }
+        finally { _isThemeBusy = false; await InvokeAsync(StateHasChanged); }
+    }
+    private async Task ResetThemeAsync() { ApplyThemeLibrary(new BookReaderThemeLibraryDto(new("Montserrat", 18, 1.75, null, null, DesktopDefaultContentPaddingPercent), null, _themeLibrary?.Themes ?? [])); await SaveActiveThemeAsync(); }
+    private async Task ApplyThemeAsync(ChangeEventArgs args)
+    {
+        var id = args.Value?.ToString(); var theme = _themeLibrary?.Themes.FirstOrDefault(value => value.Id == id); if (theme is null) return;
+        ApplyThemeLibrary(_themeLibrary! with { ActiveSettings = theme.Settings, SelectedThemeId = theme.Id }); await SaveActiveThemeAsync();
+    }
+    private async Task SaveNewThemeAsync() => await ThemeRequestAsync(() => Http.PostAsJsonAsync("api/books/reader-themes", new CreateBookReaderThemeRequest(_themeName, CurrentThemeSettings)));
+    private async Task UpdateThemeAsync() { if (_themeLibrary?.SelectedThemeId is { } id) await ThemeRequestAsync(() => Http.PutAsJsonAsync($"api/books/reader-themes/{Uri.EscapeDataString(id)}", new UpdateBookReaderThemeRequest(null, CurrentThemeSettings))); }
+    private async Task RenameThemeAsync() { if (_themeLibrary?.SelectedThemeId is { } id) await ThemeRequestAsync(() => Http.PutAsJsonAsync($"api/books/reader-themes/{Uri.EscapeDataString(id)}", new UpdateBookReaderThemeRequest(_themeName, CurrentThemeSettings))); }
+    private async Task DeleteThemeAsync() { if (_themeLibrary?.SelectedThemeId is { } id) await ThemeRequestAsync(() => Http.DeleteAsync($"api/books/reader-themes/{Uri.EscapeDataString(id)}")); }
+    private async Task ThemeRequestAsync(Func<Task<HttpResponseMessage>> request)
+    { _isThemeBusy = true; _themeFeedback = null; try { using var response = await request(); if (response.IsSuccessStatusCode) { var library = await response.Content.ReadFromJsonAsync<BookReaderThemeLibraryDto>(); if (library is not null) ApplyThemeLibrary(library); _themeName = string.Empty; } else { _themeFeedback = "The theme change could not be saved."; _themeError = true; } } catch (HttpRequestException) { _themeFeedback = "The theme change could not be saved."; _themeError = true; } finally { _isThemeBusy = false; } }
 
     private void RequestPaginationReflow()
     {

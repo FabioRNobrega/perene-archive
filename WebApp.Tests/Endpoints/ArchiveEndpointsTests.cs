@@ -18,6 +18,22 @@ namespace WebApp.Tests.Endpoints;
 public sealed class ArchiveEndpointsTests
 {
     [Fact]
+    public async Task Reader_theme_endpoints_round_trip_safe_global_settings_and_validate_requests()
+    {
+        using var root = CreateArchive(); using var factory = new VideoManagerFactory(root.Path); using var client = factory.CreateClient();
+        var initial = await client.GetFromJsonAsync<BookReaderThemeLibraryDto>("/api/books/reader-themes");
+        Assert.Equal("Montserrat", initial!.ActiveSettings.FontFamily);
+        var settings = new BookReaderThemeSettingsDto("Arial", 24, 2.0, "#112233", "#AABBCC");
+        using var create = await client.PostAsJsonAsync("/api/books/reader-themes", new CreateBookReaderThemeRequest("Night", settings));
+        var library = await create.Content.ReadFromJsonAsync<BookReaderThemeLibraryDto>();
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode); Assert.DoesNotContain(root.Path, await create.Content.ReadAsStringAsync());
+        var id = Assert.Single(library!.Themes).Id;
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/books/reader-themes/missing")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/books/reader-themes/active", new BookReaderThemeSettingsDto("bad", 0, 0, "red", null))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync($"/api/books/reader-themes/{id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Download_endpoint_returns_files_with_attachment_ranges_and_folders_as_streamed_zips()
     {
         using var root = CreateArchive();
