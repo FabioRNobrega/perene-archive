@@ -536,11 +536,12 @@ public sealed class ArchiveServiceTests
         var service = CreateService(root.Path);
 
         var item = Assert.Single(service.List("videos", null).Items);
-        var upload = service.ValidateUploadDestination("videos", null, name);
+        var uploadName = $"upload-{name}";
+        var upload = service.ValidateUploadDestination("videos", null, uploadName);
 
         Assert.True(item.IsConvertibleVideo);
         Assert.False(item.IsVideo);
-        Assert.EndsWith(name, upload.FinalPath, StringComparison.Ordinal);
+        Assert.EndsWith(uploadName, upload.FinalPath, StringComparison.Ordinal);
     }
 
     [Fact]

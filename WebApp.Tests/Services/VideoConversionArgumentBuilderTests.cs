@@ -8,7 +8,7 @@ public sealed class VideoConversionArgumentBuilderTests
     [Fact]
     public void Build_burns_only_the_server_resolved_subtitle_stream()
     {
-        var profile = new ResolvedVideoConversionProfile("Compress · 480p", MediaAction.FullTranscode, 720, 480, 800_000, 128_000, 1, null, new("compress", 480, "balanced", null, 4), new(4, "dvd_subtitle", "eng", "Track 1 (eng)"));
+        var profile = new ResolvedVideoConversionProfile("Compress · 480p", MediaAction.FullTranscode, 720, 480, 800_000, 128_000, 1, null, new("compress", 480, "balanced", null, 4), new(4, "subrip", "eng", "Track 1 (eng)"));
         var job = new VideoConversionJob("job", null!, MediaAction.FullTranscode, new("mpeg", "mpeg2video", "ac3", null, 720, 480, TimeSpan.FromSeconds(10)), profile);
 
         var arguments = new VideoConversionArgumentBuilder().Build("/server-only/a:b's.vob", "/server-only/output.mp4", job, 23);
