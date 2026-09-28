@@ -8,6 +8,7 @@ public sealed class PersistentPlayerState
     public const string CutStreamBasePath = "api/cuts";
     public const string CompositionStreamBasePath = "api/compositions";
     public event Action? StateChanged;
+    public event Action? PlaybackStateChanged;
     public event Action? CutQueued;
     public PlaylistPlayerPreferencesState PlaylistPreferences { get; } = new();
 
@@ -245,8 +246,13 @@ public sealed class PersistentPlayerState
             return;
         }
 
+        var playbackChanged = WasPlaying != isPlaying;
         LastKnownTime = double.IsFinite(currentTime) ? Math.Max(0, currentTime) : 0;
         WasPlaying = isPlaying;
+        if (playbackChanged)
+        {
+            PlaybackStateChanged?.Invoke();
+        }
     }
 
     private void NotifyStateChanged() => StateChanged?.Invoke();

@@ -1,0 +1,35 @@
+@inject PersistentPlayerState PlayerState
+@inject PersistentPlayerCommands PlayerCommands
+
+<section class="epub-reader-mini-player shadow @(Expanded ? "is-open" : "")"
+         aria-label="Reader media controls"
+         aria-hidden="@(!Expanded)"
+         @onpointerdown:stopPropagation="true">
+    <div class="btn-group" role="group" aria-label="Media playback controls">
+        <button class="btn btn-lg btn-outline-primary d-inline-flex align-items-center justify-content-center"
+                type="button" disabled="@(!PlayerState.CanSelectPreviousTrack)" aria-label="Previous track" title="Previous track"
+                @onclick="() => SendAsync(PersistentPlayerCommand.SelectPreviousTrack)">
+            <i class="bi bi-skip-backward-fill" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-lg btn-primary d-inline-flex align-items-center justify-content-center"
+                type="button" aria-label="@(PlayerState.WasPlaying ? "Pause" : "Play")" title="@(PlayerState.WasPlaying ? "Pause" : "Play")"
+                @onclick="() => SendAsync(PersistentPlayerCommand.TogglePlayback)">
+            <i class="bi @(PlayerState.WasPlaying ? "bi-pause-fill" : "bi-play-fill")" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-lg btn-outline-primary d-inline-flex align-items-center justify-content-center"
+                type="button" aria-label="Stop" title="Stop" @onclick="() => SendAsync(PersistentPlayerCommand.Stop)">
+            <i class="bi bi-stop-fill" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-lg btn-outline-primary d-inline-flex align-items-center justify-content-center"
+                type="button" disabled="@(!PlayerState.CanSelectNextTrack)" aria-label="Next track" title="Next track"
+                @onclick="() => SendAsync(PersistentPlayerCommand.SelectNextTrack)">
+            <i class="bi bi-skip-forward-fill" aria-hidden="true"></i>
+        </button>
+    </div>
+</section>
+
+@code {
+    [Parameter] public bool Expanded { get; set; }
+
+    private Task SendAsync(PersistentPlayerCommand command) => PlayerCommands.RequestAsync(command);
+}

@@ -148,6 +148,12 @@
     bottom: 0;
     left: 0;
     background-color: var(--epub-reader-surface-bg, var(--bs-body-bg));
+    --epub-reader-progress-footer-height: 3.5rem;
+    min-height: var(--epub-reader-progress-footer-height);
+}
+
+.epub-reader-progress-footer-playable {
+    cursor: pointer;
 }
 
 .epub-reader-progress-value {

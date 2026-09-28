@@ -15,4 +15,19 @@ public sealed class EpubReaderPaginationInteropTests
         Assert.Contains("OnReaderContentResizedAsync()", component);
         Assert.Contains("RequestPaginationReflow();", component);
     }
+
+    [Fact]
+    public void Mini_player_is_wired_to_reader_state_and_dismissal()
+    {
+        var componentPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../WebApp/WebApp.Client/Components/EpubReader.razor"));
+        var component = File.ReadAllText(componentPath);
+
+        Assert.Contains("@inject PersistentPlayerState PlayerState", component);
+        Assert.Contains("<EpubReaderMiniPlayer Expanded=\"_isMiniPlayerExpanded\" />", component);
+        Assert.Contains("@onpointerdown=\"DismissMiniPlayer\"", component);
+        Assert.Contains("PlayerState.PlaybackStateChanged += HandlePlayerStateChanged", component);
+        Assert.Contains("PlayerState.PlaybackStateChanged -= HandlePlayerStateChanged", component);
+    }
 }

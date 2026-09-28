@@ -2,6 +2,7 @@
 @using System.Globalization
 @inject HttpClient Http
 @inject IJSRuntime JS
+@inject PersistentPlayerState PlayerState
 
 <section @ref="_readerRef" class="epub-reader card position-fixed top-0 start-0 w-100 h-100 overflow-hidden border-0 rounded-0 d-flex flex-column"
          style="@ReaderSurfaceStyle"
@@ -202,7 +203,8 @@
         <div class="epub-reader-page-frame flex-grow-1 overflow-hidden" style="@PageFrameStyle">
             <div class="epub-reader-content h-100 overflow-hidden"
                  style="@ContentStyle"
-                 @ref="_contentRef">
+                 @ref="_contentRef"
+                 @onpointerdown="DismissMiniPlayer">
                 @if (_isLoadingBook || _isLoadingChapter)
                 {
                     <div class="d-flex flex-column align-items-center gap-2 py-5 text-center text-body-secondary h-100 justify-content-center" role="status" aria-live="polite">
@@ -219,8 +221,13 @@
             </div>
             @if (_chapter is not null && !_isLoadingBook && !_isLoadingChapter)
             {
-                <footer class="epub-reader-progress-footer border-top d-flex flex-wrap align-items-center justify-content-between gap-2 pt-3 pb-2"
-                        aria-label="Reading progress and page navigation">
+                @if (PlayerState.HasSelection)
+                {
+                    <EpubReaderMiniPlayer Expanded="_isMiniPlayerExpanded" />
+                }
+                <footer class="epub-reader-progress-footer border-top d-flex flex-wrap align-items-center justify-content-between gap-2 pt-3 pb-2 @(PlayerState.HasSelection ? "epub-reader-progress-footer-playable" : "")"
+                        aria-label="Reading progress and page navigation"
+                        @onclick="ToggleMiniPlayer">
                     <span class="small fw-semibold text-body-secondary text-nowrap epub-reader-progress-value ms-2 ms-md-4">
                     Book Progress @FormatPercent(BookProgress)
                     </span>
@@ -329,6 +336,7 @@
     private IJSObjectReference? _module;
     private DotNetObjectReference<EpubReader>? _pageNavigationReference;
     private bool _isFullscreen;
+    private bool _isMiniPlayerExpanded;
     private bool _isDarkApplicationTheme = true;
     private CancellationTokenSource? _statusCts;
     private CancellationTokenSource? _toolbarHideCts;
@@ -398,6 +406,38 @@
         ResetState();
         await LoadThemesAsync();
         await LoadBookAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        PlayerState.StateChanged += HandlePlayerStateChanged;
+        PlayerState.PlaybackStateChanged += HandlePlayerStateChanged;
+    }
+
+    private void HandlePlayerStateChanged()
+    {
+        if (!PlayerState.HasSelection)
+        {
+            _isMiniPlayerExpanded = false;
+        }
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleMiniPlayer()
+    {
+        if (PlayerState.HasSelection)
+        {
+            _isMiniPlayerExpanded = !_isMiniPlayerExpanded;
+        }
+    }
+
+    private void DismissMiniPlayer()
+    {
+        if (_isMiniPlayerExpanded)
+        {
+            _isMiniPlayerExpanded = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1152,6 +1192,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        PlayerState.StateChanged -= HandlePlayerStateChanged;
+        PlayerState.PlaybackStateChanged -= HandlePlayerStateChanged;
         CancelAndDispose(ref _statusCts);
         CancelAndDispose(ref _toolbarHideCts);
 

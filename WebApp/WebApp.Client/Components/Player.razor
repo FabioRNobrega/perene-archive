@@ -3,6 +3,7 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject PersistentPlayerCommands PlayerCommands
 
 <section class="@EditorCssClass" aria-label="Video player">
     @if (Selected is null)
@@ -341,6 +342,20 @@
     {
         SynchronizeSelection();
     }
+
+    protected override void OnInitialized()
+    {
+        PlayerCommands.CommandRequested += HandlePersistentPlayerCommandAsync;
+    }
+
+    private Task HandlePersistentPlayerCommandAsync(PersistentPlayerCommand command) => command switch
+    {
+        PersistentPlayerCommand.TogglePlayback => TogglePlaybackAsync(),
+        PersistentPlayerCommand.Stop => StopAsync(),
+        PersistentPlayerCommand.SelectPreviousTrack => SelectPreviousTrackAsync(),
+        PersistentPlayerCommand.SelectNextTrack => SelectNextTrackAsync(),
+        _ => Task.CompletedTask
+    };
 
     protected override bool ShouldRender()
     {
@@ -830,8 +845,18 @@
         }
     }
 
-    private Task TogglePlaybackAsync() => ExecuteMediaCommandAsync(
-        _player.IsPlaying ? "pauseVideo" : "playVideo");
+    private async Task TogglePlaybackAsync()
+    {
+        await ExecuteMediaCommandAsync(_player.IsPlaying ? "pauseVideo" : "playVideo");
+        try
+        {
+            await SynchronizeMediaStateAsync();
+        }
+        catch (JSException)
+        {
+            ShowPlayerCommandError();
+        }
+    }
 
     private async Task SeekAsync(double value)
     {
@@ -1093,6 +1118,7 @@
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        PlayerCommands.CommandRequested -= HandlePersistentPlayerCommandAsync;
         CancelControlsHideTimer();
         _fillTab.Exit();
 

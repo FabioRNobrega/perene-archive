@@ -260,6 +260,22 @@ public sealed class PersistentPlayerStateTests
     }
 
     [Fact]
+    public void Update_playback_progress_notifies_when_playback_state_changes()
+    {
+        var state = new PersistentPlayerState();
+        state.SelectVideo(CreateVideo("video-one"));
+        var notifications = 0;
+        state.PlaybackStateChanged += () => notifications++;
+
+        state.UpdatePlaybackProgress(1, isPlaying: true);
+        state.UpdatePlaybackProgress(2, isPlaying: true);
+        state.UpdatePlaybackProgress(3, isPlaying: false);
+
+        Assert.Equal(2, notifications);
+        Assert.False(state.WasPlaying);
+    }
+
+    [Fact]
     public void Selecting_a_new_track_resets_playback_progress()
     {
         var state = new PersistentPlayerState();
