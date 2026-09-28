@@ -574,12 +574,12 @@
 
 @if (_imageViewerStartId is not null)
 {
-    <ImageCarouselViewer Images="_imageViewerImages" Category="@Category" StartId="_imageViewerStartId" OnExit="CloseImageViewer" />
+    <FeatureErrorBoundary FeatureName="The image viewer" RecoveryRequested="CloseImageViewer"><ImageCarouselViewer Images="_imageViewerImages" Category="@Category" StartId="_imageViewerStartId" OnExit="CloseImageViewer" /></FeatureErrorBoundary>
 }
 
 @if (_comicViewerItemId is not null)
 {
-    <ComicViewer Category="@Category" ItemId="@_comicViewerItemId" OnExit="CloseComicViewer" />
+    <FeatureErrorBoundary FeatureName="The comic viewer" RecoveryRequested="CloseComicViewer"><ComicViewer Category="@Category" ItemId="@_comicViewerItemId" OnExit="CloseComicViewer" /></FeatureErrorBoundary>
 }
 
 @if (_conversionQueued)

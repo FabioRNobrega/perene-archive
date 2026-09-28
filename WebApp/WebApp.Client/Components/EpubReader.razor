@@ -577,8 +577,7 @@
 
     private void ArmToolbarHideTimer()
     {
-        _toolbarHideCts?.Cancel();
-        _toolbarHideCts?.Dispose();
+        CancelAndDispose(ref _toolbarHideCts);
         _toolbarHideCts = new CancellationTokenSource();
         _ = HideToolbarAfterDelayAsync(_toolbarHideCts.Token);
     }
@@ -924,12 +923,31 @@
     private void ShowStatus(string message)
     {
         _statusMessage = message;
-        _statusCts?.Cancel();
-        _statusCts?.Dispose();
-        _toolbarHideCts?.Cancel();
-        _toolbarHideCts?.Dispose();
+        CancelAndDispose(ref _statusCts);
         _statusCts = new CancellationTokenSource();
         _ = ClearStatusAfterDelayAsync(_statusCts.Token);
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        if (source is null)
+        {
+            return;
+        }
+
+        try
+        {
+            source.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A previously completed UI timer may already have released its source.
+        }
+        finally
+        {
+            source.Dispose();
+            source = null;
+        }
     }
 
     private async Task ClearStatusAfterDelayAsync(CancellationToken cancellationToken)
@@ -1025,8 +1043,8 @@
 
     public async ValueTask DisposeAsync()
     {
-        _statusCts?.Cancel();
-        _statusCts?.Dispose();
+        CancelAndDispose(ref _statusCts);
+        CancelAndDispose(ref _toolbarHideCts);
 
         await UnregisterPageNavigationAsync();
         _pageNavigationReference?.Dispose();

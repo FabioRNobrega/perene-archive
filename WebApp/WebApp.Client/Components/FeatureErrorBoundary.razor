@@ -1,0 +1,63 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>
+        @ChildContent
+    </ChildContent>
+    <ErrorContent>
+        @if (!_dismissed)
+        {
+        <section class="alert alert-danger feature-error-toast d-flex align-items-start gap-3 shadow mb-0"
+                 role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-4" aria-hidden="true"></i>
+            <div class="pe-4">
+                <h2 class="h6 alert-heading mb-1">@FeatureName is unavailable</h2>
+                <p class="mb-2">This feature could not continue. Other parts of PereneArchive are still available.</p>
+                @if (CanRetry)
+                {
+                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="RecoverAsync">
+                        <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Try again
+                    </button>
+                }
+                else
+                {
+                    <p class="mb-0">Navigate to another section and try again.</p>
+                }
+            </div>
+            <button type="button" class="btn-close ms-auto" aria-label="Close error message" @onclick="DismissAsync"></button>
+        </section>
+        }
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    [Parameter, EditorRequired] public string FeatureName { get; set; } = string.Empty;
+    [Parameter] public bool CanRetry { get; set; } = true;
+    [Parameter] public EventCallback RecoveryRequested { get; set; }
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+
+    private ErrorBoundary? _boundary;
+    private bool _dismissed;
+
+    public void Recover() => _boundary?.Recover();
+
+    private async Task RecoverAsync()
+    {
+        if (RecoveryRequested.HasDelegate)
+        {
+            await RecoveryRequested.InvokeAsync();
+        }
+
+        _boundary?.Recover();
+    }
+
+    private async Task DismissAsync()
+    {
+        _dismissed = true;
+        if (RecoveryRequested.HasDelegate)
+        {
+            await RecoveryRequested.InvokeAsync();
+            _boundary?.Recover();
+        }
+    }
+}

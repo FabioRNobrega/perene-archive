@@ -10,7 +10,7 @@
 
 @if (_openBookId is not null)
 {
-    <EpubReader Category="books" ItemId="@_openBookId" OnClose="CloseBook" />
+    <FeatureErrorBoundary FeatureName="The book reader" RecoveryRequested="CloseBook"><EpubReader Category="books" ItemId="@_openBookId" OnClose="CloseBook" /></FeatureErrorBoundary>
 }
 
 @code {
@@ -18,5 +18,5 @@
 
     private void OpenBook(ArchiveItemDto item) => _openBookId = item.Id;
 
-    private void CloseBook() => _openBookId = null;
+    private Task CloseBook() { _openBookId = null; return Task.CompletedTask; }
 }

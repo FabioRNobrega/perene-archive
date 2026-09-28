@@ -1,14 +1,14 @@
 @if (_openTextDocument is not null)
 {
-    <TextDocumentEditor Category="@Category" ItemId="@_openTextDocument.Id" OnClose="CloseTextDocument" />
+    <FeatureErrorBoundary FeatureName="The text editor" RecoveryRequested="CloseTextDocument"><TextDocumentEditor Category="@Category" ItemId="@_openTextDocument.Id" OnClose="CloseTextDocument" /></FeatureErrorBoundary>
 }
 else if (_openPdfDocument is not null)
 {
-    <PdfDocumentViewer Name="@_openPdfDocument.Name" PdfUrl="@(_openPdfDocument.PdfUrl ?? string.Empty)" OnClose="ClosePdfDocument" />
+    <FeatureErrorBoundary FeatureName="The PDF viewer" RecoveryRequested="ClosePdfDocument"><PdfDocumentViewer Name="@_openPdfDocument.Name" PdfUrl="@(_openPdfDocument.PdfUrl ?? string.Empty)" OnClose="ClosePdfDocument" /></FeatureErrorBoundary>
 }
 else
 {
-    <ArchiveBrowser Category="@Category" Title="@Title" Icon="@Icon" OnBookSelected="OnBookSelected" OnTextDocumentSelected="OpenTextDocument" OnPdfDocumentSelected="OpenPdfDocument" />
+    <FeatureErrorBoundary FeatureName="The archive browser"><ArchiveBrowser Category="@Category" Title="@Title" Icon="@Icon" OnBookSelected="OnBookSelected" OnTextDocumentSelected="OpenTextDocument" OnPdfDocumentSelected="OpenPdfDocument" /></FeatureErrorBoundary>
 }
 
 @code {
@@ -21,27 +21,27 @@ else
     private ArchiveItemDto? _openTextDocument;
     private ArchiveItemDto? _openPdfDocument;
 
-    private void OpenTextDocument(ArchiveItemDto item)
+    private Task OpenTextDocument(ArchiveItemDto item)
     {
         _openTextDocument = item;
-        _ = EditorOpenChanged.InvokeAsync(true);
+        return EditorOpenChanged.InvokeAsync(true);
     }
 
-    private void CloseTextDocument()
+    private Task CloseTextDocument()
     {
         _openTextDocument = null;
-        _ = EditorOpenChanged.InvokeAsync(false);
+        return EditorOpenChanged.InvokeAsync(false);
     }
 
-    private void OpenPdfDocument(ArchiveItemDto item)
+    private Task OpenPdfDocument(ArchiveItemDto item)
     {
         _openPdfDocument = item;
-        _ = EditorOpenChanged.InvokeAsync(true);
+        return EditorOpenChanged.InvokeAsync(true);
     }
 
-    private void ClosePdfDocument()
+    private Task ClosePdfDocument()
     {
         _openPdfDocument = null;
-        _ = EditorOpenChanged.InvokeAsync(false);
+        return EditorOpenChanged.InvokeAsync(false);
     }
 }

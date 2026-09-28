@@ -53,6 +53,10 @@ else
         {
             _isUnavailable = true;
         }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            // Disposal/replacement cancellation is not an availability failure.
+        }
         catch (TaskCanceledException)
         {
             _isUnavailable = true;

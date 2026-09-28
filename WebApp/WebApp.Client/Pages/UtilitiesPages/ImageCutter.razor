@@ -67,7 +67,7 @@ else
 
 @if (_imageViewerStartId is not null)
 {
-    <ImageCarouselViewer Images="_crops" Category="photos" StartId="_imageViewerStartId" OnExit="CloseImageViewer" />
+    <FeatureErrorBoundary FeatureName="The crop image viewer" RecoveryRequested="CloseImageViewer"><ImageCarouselViewer Images="_crops" Category="photos" StartId="_imageViewerStartId" OnExit="CloseImageViewer" /></FeatureErrorBoundary>
 }
 
 @code {

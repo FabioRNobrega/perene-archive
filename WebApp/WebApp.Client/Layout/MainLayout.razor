@@ -1,17 +1,23 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject PersistentPlayerState PlayerState
+@inject NavigationManager Navigation
+@inject ILogger<MainLayout> Logger
 
 <div class="vh-100 bg-body-tertiary d-flex flex-column overflow-hidden p-0 p-md-4 @(ShowFooterPlayer ? "has-player-footer" : null)">
     <a class="visually-hidden-focusable btn btn-primary position-fixed top-0 start-0 z-3 m-2"
        href="#main-content">Skip to main content</a>
     <div class="d-flex flex-column flex-md-row flex-fill min-h-0 overflow-hidden bg-body-tertiary">
         <Sidebar />
-        <main id="main-content" class="flex-fill min-w-0 min-h-0 overflow-y-auto scrollbar-none-mobile m-2 m-md-0 px-3 px-md-4 py-4 bg-body border rounded-4 shadow-sm">@Body</main>
+        <main id="main-content" class="flex-fill min-w-0 min-h-0 overflow-y-auto scrollbar-none-mobile m-2 m-md-0 px-3 px-md-4 py-4 bg-body border rounded-4 shadow-sm">
+            <FeatureErrorBoundary @ref="_pageBoundary" FeatureName="This page" CanRetry="false">@Body</FeatureErrorBoundary>
+        </main>
     </div>
     @if (ShowFooterPlayer)
     {
-        <Player PlayerState="PlayerState" Mode="PlayerPresentationMode.Footer" />
+        <FeatureErrorBoundary FeatureName="The media player" RecoveryRequested="ResetPlayerAsync">
+            <Player PlayerState="PlayerState" Mode="PlayerPresentationMode.Footer" />
+        </FeatureErrorBoundary>
     }
 </div>
 
@@ -21,27 +27,51 @@
      role="alert"
      data-nosnippet>
     <strong>Something went wrong.</strong>
-    <a href="." class="alert-link ms-1">Reload PereneArchive</a>
+    <span class="ms-1">You can close this message and continue using available features.</span>
     <button type="button"
             class="btn-close position-absolute top-50 end-0 translate-middle-y me-2"
-            aria-label="Dismiss error"></button>
+            aria-label="Close error message"
+            onclick="this.parentElement.style.display='none';"></button>
 </div>
 
 @code {
+    private FeatureErrorBoundary? _pageBoundary;
     private bool ShowFooterPlayer => PlayerState.Selected is not null && !PlayerState.PlaylistViewActive;
 
     protected override void OnInitialized()
     {
         PlayerState.StateChanged += HandlePlayerStateChanged;
+        Navigation.LocationChanged += HandleLocationChanged;
     }
 
     private void HandlePlayerStateChanged()
     {
-        _ = InvokeAsync(StateHasChanged);
+        _ = RefreshShellAsync();
+    }
+
+    private async Task RefreshShellAsync()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+        catch (Exception) { Logger.LogError("Unable to refresh the application shell after player state changed."); }
+    }
+
+    private async void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        try { await InvokeAsync(() => _pageBoundary?.Recover()); }
+        catch (ObjectDisposedException) { }
+        catch (Exception) { Logger.LogError("Unable to recover the page boundary after navigation."); }
+    }
+
+    private Task ResetPlayerAsync()
+    {
+        PlayerState.Clear();
+        return Task.CompletedTask;
     }
 
     public void Dispose()
     {
         PlayerState.StateChanged -= HandlePlayerStateChanged;
+        Navigation.LocationChanged -= HandleLocationChanged;
     }
 }

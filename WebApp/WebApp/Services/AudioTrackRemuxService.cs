@@ -19,7 +19,7 @@ internal sealed class AudioTrackRemuxService(
     IAudioTrackRemuxer remuxer,
     ILogger<AudioTrackRemuxService> logger)
 {
-    private readonly ConcurrentDictionary<string, Task> _active = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _active = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, bool> _failedKeys = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -42,8 +42,27 @@ internal sealed class AudioTrackRemuxService(
             return AudioTrackRemuxState.Failed;
         }
 
-        _active.GetOrAdd(key, _ => Task.Run(() => RunAsync(key, entry, trackIndex)));
+        _ = _active.GetOrAdd(
+            key,
+            _ => new Lazy<Task>(
+                () => StartJob(key, entry, trackIndex),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         return AudioTrackRemuxState.Pending;
+    }
+
+    private Task StartJob(string key, VideoFileEntry entry, int trackIndex)
+    {
+        var job = Task.Run(() => RunAsync(key, entry, trackIndex));
+        _ = job.ContinueWith(completed =>
+        {
+            _active.TryRemove(key, out _);
+            if (completed.IsFaulted)
+            {
+                _ = completed.Exception;
+                logger.LogError("Audio track remux task ended unexpectedly for media {MediaId} track {Track}.", entry.Id, trackIndex);
+            }
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        return job;
     }
 
     private async Task RunAsync(string key, VideoFileEntry entry, int trackIndex)
@@ -76,7 +95,6 @@ internal sealed class AudioTrackRemuxService(
         finally
         {
             _gate.Release();
-            _active.TryRemove(key, out _);
         }
     }
 }

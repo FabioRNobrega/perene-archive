@@ -12,19 +12,19 @@
     <div class="card-body position-relative h-100 min-h-0 @(_showJobs ? null : "dashboard")">
     @if (_showJobs)
     {
-        <DashboardConversionJobsTab @ref="_jobsTab" />
+        <FeatureErrorBoundary FeatureName="Conversion jobs"><DashboardConversionJobsTab @ref="_jobsTab" /></FeatureErrorBoundary>
     }
     else
     {
-    <DashboardSystemCard @ref="_systemCard" />
-    <DashboardMemoryCard @ref="_memoryCard" />
-    <DashboardStorageCard @ref="_storageCard" />
-    <DashboardNetworkCard @ref="_networkCard" />
-    <DashboardArchiveCard @ref="_archiveCard" />
-    <DashboardDockerCard @ref="_dockerCard" />
-    <DashboardHealthCard @ref="_healthCard" />
-    <DashboardHistoryCard @ref="_historyCard" />
-    <DashboardAlertsCard @ref="_alertsCard" />
+    <FeatureErrorBoundary FeatureName="System dashboard"><DashboardSystemCard @ref="_systemCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Memory dashboard"><DashboardMemoryCard @ref="_memoryCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Storage dashboard"><DashboardStorageCard @ref="_storageCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Network dashboard"><DashboardNetworkCard @ref="_networkCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Archive dashboard"><DashboardArchiveCard @ref="_archiveCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Docker dashboard"><DashboardDockerCard @ref="_dockerCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Health dashboard"><DashboardHealthCard @ref="_healthCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="History dashboard"><DashboardHistoryCard @ref="_historyCard" /></FeatureErrorBoundary>
+    <FeatureErrorBoundary FeatureName="Alerts dashboard"><DashboardAlertsCard @ref="_alertsCard" /></FeatureErrorBoundary>
     }
     <button type="button"
             class="btn btn-secondary d-inline-flex align-items-center justify-content-center rounded-circle px-3 py-2 position-absolute bottom-0 end-0 z-2"
