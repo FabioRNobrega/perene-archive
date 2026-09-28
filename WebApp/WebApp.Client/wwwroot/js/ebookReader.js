@@ -414,17 +414,15 @@ export function getDefaultContentPaddingPercent() {
     return 5;
 }
 
-// Reserve a couple of CSS pixels inside the column edge so sub-pixel rounding
-// between the measured container width and the browser's actual (fractional)
-// column layout never clips a glyph at the page boundary.
-const PAGE_WIDTH_SAFETY_MARGIN_PX = 6;
-
 function getPageMetrics(container) {
-    // clientWidth is the actual inner pagination area after scrollbar/padding calculations.
-    // Use the same integer width for the CSS column and every scroll stride so fractional layout
-    // rounding never places the final glyph beyond the clipped page boundary.
-    const innerWidth = container.clientWidth;
-    const pageWidth = Math.max(1, Math.floor(innerWidth) - PAGE_WIDTH_SAFETY_MARGIN_PX);
+    const containerStyle = getComputedStyle(container);
+    const horizontalInsets = [
+        containerStyle.borderLeftWidth,
+        containerStyle.borderRightWidth,
+        containerStyle.paddingLeft,
+        containerStyle.paddingRight
+    ].reduce((total, value) => total + (Number.parseFloat(value) || 0), 0);
+    const pageWidth = Math.max(1, container.getBoundingClientRect().width - horizontalInsets);
     container.style.setProperty("--epub-reader-page-width", `${pageWidth}px`);
 
     const chapter = container.querySelector(".epub-chapter");
@@ -481,6 +479,41 @@ export function getVisibleWordOffset(container, chapterWordCount) {
 
     return Math.round(getPageFraction(container) * wordCount);
 }
+
+let paginationResizeObserver = null;
+let pendingPaginationResizeFrame = null;
+
+export function registerPaginationResizeObserver(container, dotNetReference) {
+    unregisterPaginationResizeObserver();
+
+    if (!container || typeof ResizeObserver === "undefined") {
+        return;
+    }
+
+    paginationResizeObserver = new ResizeObserver(() => {
+        if (pendingPaginationResizeFrame !== null) {
+            return;
+        }
+
+        pendingPaginationResizeFrame = requestAnimationFrame(() => {
+            pendingPaginationResizeFrame = null;
+            dotNetReference.invokeMethodAsync("OnReaderContentResizedAsync").catch(() => { });
+        });
+    });
+
+    paginationResizeObserver.observe(container);
+}
+
+export function unregisterPaginationResizeObserver() {
+    paginationResizeObserver?.disconnect();
+    paginationResizeObserver = null;
+
+    if (pendingPaginationResizeFrame !== null) {
+        cancelAnimationFrame(pendingPaginationResizeFrame);
+        pendingPaginationResizeFrame = null;
+    }
+}
+
 const fullscreenHandlers = new WeakMap();
 
 export function registerFullscreenChange(element, dotNetReference) {

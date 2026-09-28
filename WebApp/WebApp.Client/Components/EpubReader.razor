@@ -411,6 +411,7 @@
             await _module.InvokeVoidAsync("registerPageNavigation", _pageNavigationReference);
             await _module.InvokeVoidAsync("registerTapNavigation", _contentRef, _pageNavigationReference);
             await _module.InvokeVoidAsync("registerSelectionObserver", _contentRef, _pageNavigationReference);
+            await _module.InvokeVoidAsync("registerPaginationResizeObserver", _contentRef, _pageNavigationReference);
             ArmToolbarHideTimer();
             if (await ApplyResponsiveContentPaddingDefaultAsync())
             {
@@ -752,6 +753,13 @@
         _pendingPageIntent = PageIntent.Fraction;
         _pendingPageFraction = _pageCount > 1 ? (double)_pageIndex / (_pageCount - 1) : 0;
         _pendingPaginationApply = true;
+    }
+
+    [JSInvokable]
+    public Task OnReaderContentResizedAsync()
+    {
+        RequestPaginationReflow();
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task ApplyPaginationAsync()
@@ -1106,6 +1114,7 @@
             await _module.InvokeVoidAsync("unregisterPageNavigation");
             await _module.InvokeVoidAsync("unregisterTapNavigation");
             await _module.InvokeVoidAsync("unregisterSelectionObserver");
+            await _module.InvokeVoidAsync("unregisterPaginationResizeObserver");
         }
         catch (JSDisconnectedException)
         {

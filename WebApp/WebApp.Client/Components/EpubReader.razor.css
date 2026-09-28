@@ -197,11 +197,6 @@
     break-inside: auto;
 }
 
-/* EPUB prose needs its own right-edge safety inset within each paginated column. */
-.epub-chapter ::deep p {
-    margin-right: 5%;
-}
-
 .epub-chapter ::deep h1,
 .epub-chapter ::deep h2,
 .epub-chapter ::deep h3,
