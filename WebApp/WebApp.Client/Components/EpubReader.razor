@@ -12,7 +12,8 @@
     }
 
     <div class="epub-reader-toolbars @(_isToolbarCollapsed ? "d-none" : "")">
-        <header class="epub-reader-toolbar bg-body-tertiary border-bottom d-flex flex-wrap align-items-center gap-2 p-2">
+        <header class="epub-reader-toolbar bg-body-tertiary border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2 p-2">
+            <div class="d-flex flex-grow-1 min-w-0 align-items-center gap-2">
             <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
                     type="button"
                     aria-label="Back"
@@ -30,7 +31,7 @@
                 <i class="bi bi-list-ul" aria-hidden="true"></i>
             </button>
 
-            <span class="fw-semibold text-truncate flex-grow-1 min-w-0" title="@(_book?.Title)">
+            <span class="d-none d-lg-inline fw-semibold text-truncate flex-grow-1 min-w-0" title="@(_book?.Title)">
                 @(_book?.Title ?? "Book")
             </span>
 
@@ -133,7 +134,10 @@
                 </div>
             </div>
 
-            <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
+                </div>
+
+                <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
                     type="button"
                     disabled="true"
                     aria-label="Notes and highlights"
@@ -160,6 +164,7 @@
                     @onclick="HideToolbar">
                 <i class="bi bi-arrow-bar-up" aria-hidden="true"></i>
             </button>
+            </div>
         </header>
 
         @if (_statusMessage is not null)

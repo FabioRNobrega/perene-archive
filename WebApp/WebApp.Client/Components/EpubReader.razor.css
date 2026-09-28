@@ -236,7 +236,7 @@
     }
 
     .epub-reader-aa-panel {
-        width: auto;
+        width: 20rem;
         left: .5rem !important;
         right: .5rem !important;
     }
