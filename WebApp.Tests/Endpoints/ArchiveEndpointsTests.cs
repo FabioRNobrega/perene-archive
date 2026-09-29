@@ -1344,6 +1344,17 @@ public sealed class ArchiveEndpointsTests
         Assert.Contains("FormatDimensions(item.Width, item.Height)", archiveBrowser);
         Assert.Contains("bi-download", archiveBrowser);
         Assert.Contains("/download", archiveBrowser);
+        Assert.Contains("HandleCardClick(item, args)", archiveBrowser);
+        Assert.Contains("HandleCardDoubleClickAsync(item, args)", archiveBrowser);
+        Assert.Contains("@oncontextmenu:preventDefault", archiveBrowser);
+        Assert.Contains("@oncontextmenu:stopPropagation", archiveBrowser);
+        Assert.Contains("@ondblclick:stopPropagation", archiveBrowser);
+        Assert.Contains("@onclick=\"ClearSelection\"", archiveBrowser);
+        Assert.Contains("@onclick:stopPropagation=\"true\"", archiveBrowser);
+        Assert.Contains("aria-pressed=\"@multiSelected\"", archiveBrowser);
+        Assert.Contains("private void HandleCardClick", archiveBrowser);
+        Assert.Contains("_selectedForMoveIds.Remove(item.Id)", archiveBrowser);
+        Assert.Contains("private async Task HandleCardDoubleClickAsync", archiveBrowser);
         Assert.DoesNotContain("card-footer d-flex gap-2 justify-content-center", archiveBrowser);
         Assert.Contains("<VideoGrid Items=\"_cuts\"", home);
         Assert.Contains("<VideoGrid Items=\"_compositions\"", home);

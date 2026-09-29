@@ -381,14 +381,14 @@
         <p class="small text-body-secondary border-bottom mb-0 px-3 py-2" role="status">
             @_filteredItems.Count @(_filteredItems.Count == 1 ? "item" : "items")
         </p>
-        <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 p-3" aria-label="@Title">
+        <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 p-3" aria-label="@Title" @onclick="ClearSelection">
             @foreach (var item in _filteredItems)
             {
-                var selected = IsSelected(item);
+                var playerSelected = IsSelected(item);
                 var multiSelected = _selectedForMoveIds.Contains(item.Id);
                 var canDrag = !_operationPending && _activeJob is null;
                 <div class="col">
-                    <div class="card h-100 position-relative overflow-hidden @(selected ? "border-primary border-2" : (multiSelected ? "border-success border-2" : null))"
+                    <div class="card h-100 position-relative overflow-hidden @(playerSelected ? "border-primary border-2" : (multiSelected ? "border-success border-2" : null))"
                          data-item-id="@item.Id"
                          data-item-name="@item.Name"
                          data-selected="@(multiSelected ? "true" : null)"
@@ -399,16 +399,21 @@
                          @ondrop:preventDefault
                          @oncontextmenu="(MouseEventArgs args) => OpenContextMenu(item, args)"
                          @oncontextmenu:preventDefault
+                         @onclick:stopPropagation="true"
                          @onmouseenter="() => StartPreview(item)"
                          @onmouseleave="ClearPreview"
                          @onkeydown="HandleCardKeyDown">
-                        @if (selected)
+                        @if (multiSelected)
                         {
-                            <span class="badge text-bg-primary position-absolute top-0 start-0 z-1 m-2">
+                            <span class="badge text-bg-success position-absolute top-0 start-0 z-1 m-2">
                                 <i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>Selected
                             </span>
                         }
-                        <div class="position-absolute top-0 end-0 z-3 me-2" @onclick:stopPropagation="true">
+                        <div class="position-absolute top-0 end-0 z-3 me-2"
+                             @onclick:stopPropagation="true"
+                             @ondblclick:stopPropagation="true"
+                             @oncontextmenu:preventDefault="true"
+                             @oncontextmenu:stopPropagation="true">
                             <button class="btn @(item.IsFavorite ? "btn-secondary" : "btn-primary") btn-sm rounded-top-0 rounded-bottom-2 d-inline-flex align-items-center justify-content-center"
                                     style="width:40px;height:40px;"
                                     type="button"
@@ -422,8 +427,9 @@
                         </div>
                         <button class="@CardButtonCssClass(item)"
                                 type="button"
-                                aria-pressed="@((item.IsVideo || item.IsMusic) ? selected : null)"
-                                @onclick="(MouseEventArgs args) => HandleCardClick(item, args)">
+                                aria-pressed="@multiSelected"
+                                @onclick="(MouseEventArgs args) => HandleCardClick(item, args)"
+                                @ondblclick="(MouseEventArgs args) => HandleCardDoubleClickAsync(item, args)">
                             @if (item.IsMusic)
                             {
                                 <span class="archive-cover-tile ratio ratio-1x1 bg-body-tertiary w-100" aria-hidden="true">
@@ -1216,13 +1222,6 @@
         if (_isLoading || _contextMenuModule is null)
         {
             return;
-        }
-
-        if (!_selectedForMoveIds.Contains(item.Id))
-        {
-            _selectedForMoveIds.Clear();
-            _selectedForMoveIds.Add(item.Id);
-            _selectionAnchorId = item.Id;
         }
 
         var targets = ArchiveDragDropRules.ResolveTargets(_selectedForMoveIds, item.Id);
@@ -2069,7 +2068,7 @@
         _confirmingBatchTrash = false;
     }
 
-    private async Task HandleCardClick(ArchiveItemDto item, MouseEventArgs args)
+    private void HandleCardClick(ArchiveItemDto item, MouseEventArgs args)
     {
         if (args.ShiftKey)
         {
@@ -2080,6 +2079,28 @@
         if (args.CtrlKey)
         {
             ApplyCtrlSelection(item);
+            return;
+        }
+
+        if (_selectedForMoveIds.Remove(item.Id))
+        {
+            if (string.Equals(_selectionAnchorId, item.Id, StringComparison.Ordinal))
+            {
+                _selectionAnchorId = _selectedForMoveIds.FirstOrDefault();
+            }
+
+            return;
+        }
+
+        _selectedForMoveIds.Clear();
+        _selectedForMoveIds.Add(item.Id);
+        _selectionAnchorId = item.Id;
+    }
+
+    private async Task HandleCardDoubleClickAsync(ArchiveItemDto item, MouseEventArgs args)
+    {
+        if (args.CtrlKey || args.ShiftKey || _operationPending || _activeJob is not null)
+        {
             return;
         }
 
