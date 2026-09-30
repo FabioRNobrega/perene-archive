@@ -14,6 +14,24 @@
 
 Add an EF Core SQLite database (`AppDbContext`, Identity + app tables) on a dedicated `appdata` volume, cookie-authenticated ASP.NET Core Identity with static-SSR account pages inside the existing global Interactive WebAssembly shell, a single resource-based authorization handler for folder ACLs, and per-user/durable replacements for the JSON stores, following the repo's existing pattern of validated `*Options`, interface-fronted singleton/scoped services, minimal-API endpoint groups in `WebApp/WebApp/Endpoints/`, browser-safe DTOs in `WebApp.Client/Models/`, and xUnit + `WebApplicationFactory` tests. Design authority is [`sqlite-migration-user-access-erd.md`](sqlite-migration-user-access-erd.md) (v7); this plan maps it onto real files and orders the work in gated phases P0–P5.
 
+## P0 Spike Results (2026-09-30)
+
+The disposable P0 implementation was removed after manual verification; it was never production functionality. The following results are evidence for the eventual P1 implementation, not authorization to begin P1: the remaining rows must pass first.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Static SSR account route and conditional render mode | Passed | A server-project route marked `ExcludeFromInteractiveRouting` rendered directly and after refresh, including with browser JavaScript disabled. A server-only account layout was required; rendering the interactive client layout failed because it depended on client-only player state. |
+| Static SSR form antiforgery | Passed | The initial form-token wiring and static form-model binding errors were detected and corrected during the spike; sign-in completed only with the framework-provided `EditForm` token. |
+| Static SSR Identity cookie → protected API | Passed | A static sign-in issued a cookie; a same-origin `GET` to a protected probe API identified the signed-in user. Signing out caused the protected API to redirect to the spike login page. |
+| WASM antiforgery token acquisition and protected POST | Passed | A WebAssembly `DelegatingHandler` fetched a token from an authenticated endpoint and attached it to a protected POST, which returned 200. The same POST without the header returned 400. |
+| Stale-token refresh exactly once; streamed/multipart no retry | Pending | Not exercised. |
+| Two-tab logout and expired-cookie behavior | Pending | Not exercised. |
+| Auth-state serialization/deserialization and `AuthorizeRouteView` after login/logout/reset | Pending | Not exercised. |
+| Custom `SignInManager` password, TOTP, and recovery-code paths | Pending | Not implemented in the disposable spike. |
+| SQLite foreign-key enforcement and atomic `AuthzVersion` bump | Pending | Not implemented in the disposable spike. |
+
+**P0 gate status: incomplete.** P1 must not start until every pending row is implemented, tested, and recorded with a positive and negative result as required by FR1.
+
 ## Technical Approach
 
 **Pattern extended.** Layered services behind interfaces registered in `WebApp/WebApp/Program.cs`; minimal API groups per area (`MapVideoEndpoints`, `MapCutEndpoints`, `MapCompositionEndpoints`, `MapArchiveEndpoints`, `MapStorageEndpoints`, `MapDashboardEndpoints`); validated options classes in `WebApp/WebApp/Configuration/`; client-owned shell/routing in `WebApp.Client`. Nothing here replaces the opaque-ID, snapshot, or FFmpeg designs.
