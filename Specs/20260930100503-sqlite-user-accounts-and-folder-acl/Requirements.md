@@ -9,7 +9,7 @@
 - [Functional Requirements](#functional-requirements)
 - [Non-Functional Requirements](#non-functional-requirements)
 - [Out of Scope](#out-of-scope)
-- [Open Questions](#open-questions)
+- [Implementation Decisions](#implementation-decisions)
 
 ## Problem Statement
 
@@ -19,27 +19,27 @@ This spec implements the design in [`sqlite-migration-user-access-erd.md`](sqlit
 
 ## Baseline Documents
 
-These two analysis documents live in this spec folder as the design baseline and are referenced by the FRs, Plan, and Validation. Where a requirement here differs from them, **this spec wins** (notably: Shared default is Read-only, TOTP is optional, phases are gated, and the review amendments FR53–FR60 are new).
+These two analysis documents live in this spec folder as the design baseline and are referenced by the FRs, Plan, and Validation. Where a requirement here differs from them, **this spec wins** (notably: Shared default is Read-only, TOTP is optional, phases are ordered implementation workstreams rather than agent gates, and the review amendments FR53–FR60 are new).
 
 - [`sqlite-migration-user-access-erd.md`](sqlite-migration-user-access-erd.md) — v7 user/folder-ACL ERD: decisions D1–D15, resolution algorithm, operation matrix, filesystem journal, identity and reconciliation rules, worked example.
 - [`sqlite-migration-candidates.md`](sqlite-migration-candidates.md) — inventory of JSON/text/in-memory stores and naming counters that migrate to SQLite.
 
 ## Delivery Phases
 
-The user chose the **full ERD** in one spec. Because the pieces have hard ordering dependencies and each phase is independently shippable and testable, implementation proceeds in gated phases; a phase is not started until the previous phase's Validation checks pass.
+The user chose the **full ERD** in one spec. The phases below are dependency-ordered workstreams, not stop conditions: an implementing agent is authorized to build every scope in this specification in one continuous implementation. Tests, backups, and recovery checks remain required acceptance and release safeguards, but no phase requires a separate spike, approval, or waiting turn before its code can be implemented.
 
 | Phase | Content | FRs |
 | --- | --- | --- |
-| P0 | Spike gate: Blazor Identity in this app's global-WASM shape, antiforgery mechanism (API **and** static forms), SQLite FK/`AuthzVersion`, SignInManager paths | FR1 |
+| P0 | Completed implementation baseline: Blazor Identity in this app's global-WASM shape, antiforgery mechanism (API **and** static forms), SQLite FK/`AuthzVersion`, SignInManager paths | FR1 |
 | P1 | SQLite foundation, Identity, login/logout/2FA, **Admin-only sign-in**, admin user management, offline admin CLI, fallback auth policy, CSRF, backups and Data Protection keys | FR2–FR15, FR53–FR55, FR57–FR58 |
 | P2 | Folder/permission model, resolution handler, endpoint + job enforcement, admin access UI; **activates ordinary accounts** | FR16–FR29, FR56 |
 | P3 | Media identity and per-user data migration from the JSON/text files | FR30–FR38 |
 | P4 | Unified durable `JOB` table (stable server-side identities) and atomic naming counters | FR39–FR43, FR59 |
 | P5 | `FS_OPERATION` journal (same-volume and cross-volume), reconciliation, Review queue | FR44–FR52, FR60 |
 
-**Explicit phase gates** (a phase may not ship, and later phases may not start, until its gate is met):
+**Implementation sequencing and release safeguards** (these constrain behavior and release readiness, not whether an agent may implement later scopes):
 
-- **G1 (P1 → ordinary users):** no non-Admin account can be created, activated, or signed in until server-side folder authorization (P2: FR19–FR22) is registered and enforced; see FR56.
+- **G1 (ordinary-user activation):** no non-Admin account can be created, activated, or signed in until server-side folder authorization (P2: FR19–FR22) is registered and enforced; see FR56.
 - **G2 (P3 → retiring JSON services):** the legacy JSON/text services are removed (FR37) only after the importer has run and been verified (FR36) **and** a verified pre-P3 backup exists (FR53).
 - **G3 (P5 → deploy):** P5 is not deployed until recovery has been tested on both same-volume and cross-volume operations (FR46, FR60, FR51).
 - **G4 (every phase):** a verified backup is taken and restore-tested immediately before applying that phase's migrations (FR53).
@@ -56,9 +56,9 @@ The user chose the **full ERD** in one spec. Because the pieces have hard orderi
 
 ## Functional Requirements
 
-### P0 — Spike gate
+### P0 — Validated implementation baseline
 
-1. FR1 — Before P1 code is merged, a throwaway-branch spike proves, in this app's shape (global Interactive WebAssembly, `prerender: false`, client-owned `Routes.razor`), all seven items of the ERD's "Hands-on Blazor Identity spike" checklist (static-SSR account pages reachable via `[ExcludeFromInteractiveRouting]`; conditional `PageRenderMode` in `WebApp/WebApp/Components/App.razor`; cookie written by static SSR honored by WASM `fetch`; `AuthorizeRouteView` + serialization/deserialization of auth state after login/logout/reset; one antiforgery token-delivery mechanism across all listed scenarios; `SignInManager` overrides on password, 2FA, and recovery-code paths; SQLite `foreign_keys` and atomic `AuthzVersion` bump). The antiforgery proof must show an **invalid, missing, stale, and other-user token is rejected on both a WASM-issued API request and a static-SSR account form** (login, logout, change password, TOTP enroll/disable/reset, and an admin form), each with a positive case. Results are recorded in `Plan.md`; if no antiforgery mechanism passes, the decision returns to the user.
+1. FR1 — P0 has been validated and is the implementation baseline. Build the production implementation in this app's shape (global Interactive WebAssembly, `prerender: false`, client-owned `Routes.razor`) using the confirmed static-SSR account routing, conditional `PageRenderMode`, cookie-authenticated WASM requests, `AuthorizeRouteView` auth-state serialization/deserialization, custom `SignInManager` paths, SQLite foreign keys, and atomic `AuthzVersion` bumps. The selected API antiforgery mechanism is the authenticated, no-store `GET /api/antiforgery` token endpoint (ERD mechanism B), used by one client `DelegatingHandler`; static SSR forms use framework antiforgery tokens. Production tests must prove positive and invalid/missing/stale/other-user negative cases for both paths, including login, logout, change password, TOTP enrollment/disable/reset, and an admin form.
 
 ### P1 — Foundation, authentication, administration
 
@@ -131,7 +131,7 @@ The user chose the **full ERD** in one spec. Because the pieces have hard orderi
 53. FR53 — **Backup before every phase.** Before applying any phase's migrations, a verified backup exists: either (a) an **online** backup made with SQLite's backup API or `VACUUM INTO` (via a `make db-backup` target that runs in the existing image), or (b) an **offline** copy taken with the web container stopped (database plus any `-wal`/`-shm` together). Copying the live `.db`/`-wal`/`-shm` files while the app accepts writes is explicitly **not** a supported backup. A backup is "verified" only after it opens, passes `PRAGMA integrity_check`, and contains the expected migration version. The same backup set includes the Data Protection key ring (FR55).
 54. FR54 — **Temporary-password expiry has a defined recovery.** If the 24-hour period lapses before the user signs in, sign-in fails per FR8; the user contacts an Admin, who issues a new reset from `/admin/users` (which always overwrites password, `MustChangePassword`, and expiry, and is never blocked by an expired one); an Admin whose own temporary password expired is recovered by another Admin or by `make admin-recover`. The Users list shows a "Temporary password expired" badge so Admins can see who needs a reissue.
 55. FR55 — **ASP.NET Core Data Protection keys are persisted** to a dedicated directory on the `appdata` volume (`/appdata/keys`, application name fixed) so cookies, antiforgery tokens, and Identity token providers survive container rebuilds; the key directory is included in every backup and restore, and a test proves a cookie and antiforgery token issued before an app restart remain valid afterward.
-56. FR56 — **P1 authorization policy (gate G1).** Until server-side folder authorization (FR19–FR22) is registered, only Admin accounts may sign in: creating a non-Admin account, activating one, or signing one in is refused with a clear message, and the admin UI disables "New user" for non-Admins. This is an enforced startup invariant tied to the registration of `IFolderAccessService`, not a configuration switch that can be turned off. On P2, existing non-Admin accounts (if any) remain inactive until an Admin activates them after reviewing the Shared defaults.
+56. FR56 — **Ordinary-user activation invariant (G1).** Until server-side folder authorization (FR19–FR22) is registered and the folder model is seeded, only Admin accounts may sign in: creating a non-Admin account, activating one, or signing one in is refused with a clear message, and the admin UI disables "New user" for non-Admins. This is a runtime security invariant, not an implementation gate or configuration switch. In the completed implementation, existing non-Admin accounts remain inactive until an Admin activates them after reviewing the Shared defaults.
 57. FR57 — **Emergency rollback is an explicit operator decision.** Once non-Admin accounts are active, deploying a build without authentication is never automatic, never a flag, and is documented as exposing the whole archive to every LAN device; the documented alternatives are restoring a verified backup and/or disabling ordinary accounts.
 58. FR58 — **CLI and migration concurrency.** Schema migrations run only at web-host startup, in one process. The offline CLI commands (`admin-create`, `admin-recover`, `db-backup`) never migrate; they refuse to run if the database schema version is not current. `admin-create`/`admin-recover`/`db-backup` are permitted while the web container is running (WAL, `busy_timeout`, short transactions; account changes update the security stamp and bump `AuthzVersion` in the same transaction so the running server sees them). Clearing the `__EFMigrationsLock` row is **never automatic** and never part of `admin-recover`: it requires a separate explicit command (`make db-unlock-migration`) that demands operator confirmation and first checks that no migrating process is alive.
 59. FR59 — **Durable jobs resolve to stable identities.** When a job is enqueued the browser's snapshot-scoped opaque ID is resolved to `MediaItemId`/`FolderId` and the identity captured at that moment (size, mtime, `ContentFingerprint`, `ContentRevision`); both are persisted with the job. At execution start the worker rechecks that the media item is still `Active` and its current identity matches, and re-authorizes the stored user fresh; a mismatch, `Missing`/`Superseded` status, or a denied permission ends the job `Failed` with a generic reason. Startup never replays a persisted job merely because it was once authorized.
@@ -162,15 +162,17 @@ The user chose the **full ERD** in one spec. Because the pieces have hard orderi
 - Changes to the FFmpeg pipelines beyond authorization and naming-counter integration.
 - Recovery of an Admin without host access (by design).
 
-## Open Questions
+## Implementation Decisions
 
-- ⚠️ TODO: The P0 spike decides the antiforgery token-delivery mechanism (ERD candidates A/B/C); candidate C needs explicit user sign-off as a trade-off.
-- ⚠️ TODO: Whether `stat` P/Invoke for `st_dev:st_ino` is acceptable under repo constraints and works on the NAS bind mount; otherwise FR52 fallback applies.
-- ⚠️ TODO: Fingerprint chunk offsets/sizes and cost on large NAS files (FR30, FR32).
-- ⚠️ TODO: EPUB `dc:identifier` reliability on the household library, which sets Review-queue volume (FR31).
-- ⚠️ TODO: Whether pass-through stubs (which reveal folder names) are acceptable or those folders should be fully hidden (FR23).
-- ⚠️ TODO: Whether the Docker-only rule needs an explicit exception line for the offline CLI targets; this spec authorizes `make admin-create`/`make admin-recover` running in the existing image.
-- ⚠️ TODO: Session length and sliding-expiration values for the cookie on the LAN.
-- ⚠️ TODO: Whether folder moves across volumes ship in P5 (per-file under a parent operation) or are refused until a later spec (FR60).
-- ⚠️ TODO: Whether Data Protection keys need encryption at rest beyond volume permissions (proposed: operator-only volume, documented; revisit if the NAS is shared).
-- ⚠️ TODO: Trash retention and journal/audit pruning windows (proposed defaults: 30 days trash, 90 days terminal journal rows, 90 days Missing flagging).
+The following choices are final for this specification; they do not require agent or user follow-up during implementation.
+
+- API antiforgery uses ERD mechanism B: an authenticated, same-origin, `Cache-Control: no-store` `GET /api/antiforgery` endpoint that issues a framework request token. The handler caches it per authenticated session, refreshes it once for a replayable request rejected with 400, and never retries streamed or multipart bodies.
+- `FsFileId` is best-effort through a narrowly isolated Linux `stat` P/Invoke. If it is unavailable or unreliable on a mount, it is stored as null and FR52's conservative `NeedsReview` behavior applies.
+- `ContentFingerprint` is SHA-256 of the full file at or below 64 MiB; larger files use three 1 MiB chunks at the beginning, midpoint, and end, combined with size and UTC mtime. Staging files are always fully hashed.
+- An EPUB identity key with a missing or duplicated `dc:identifier` is uncertain; it enters Review rather than automatically preserving annotations. A nonempty matching identifier plus normalized title and creator is a confirmed EPUB update.
+- Pass-through name-only stubs are permitted exactly as FR23 defines; they never cross a Private folder.
+- `make admin-create` and `make admin-recover` are authorized Docker/Makefile CLI targets in this spec.
+- Cookies use an eight-hour lifetime with sliding expiration; the security-stamp validation interval remains one minute.
+- P5 supports cross-volume folder moves by processing descendants under one parent operation; if a descendant cannot be safely planned, the whole move is refused before disk mutation.
+- Data Protection keys rely on an operator-only `appdata` volume and backup handling; no additional at-rest encryption mechanism is introduced by this spec.
+- Retention defaults are 30 days for trash, 90 days for terminal journal rows, and 90 days for Missing-status review records.

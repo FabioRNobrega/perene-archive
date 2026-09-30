@@ -10,7 +10,9 @@ which only controls host filesystem write access for operators, not in-app accou
 This is an analysis/design artifact and the **baseline** for the spec in this folder
 ([Requirements.md](Requirements.md), [Plan.md](Plan.md), [Validation.md](Validation.md)).
 Nothing here is implemented. Where the spec differs from this document (Shared default
-Read-only, optional TOTP, gated phases, FR53–FR60 review amendments), the spec wins.
+Read-only, optional TOTP, dependency-ordered workstreams rather than agent gates, and
+FR53–FR60 review amendments), the spec wins. The P0 investigation described below is
+historical and user-confirmed complete; it is not an implementation prerequisite.
 
 **v7 changes** (resolving the v6 review; details in
 [Review notes](#review-notes-and-microsoft-learn-evidence)). v6 had the right mechanisms;
@@ -31,10 +33,10 @@ v7 fixes the edge cases where they interacted badly:
 4. **Media replacement is classified** (D13): confirmed update / identity-changing
    replacement / uncertain. Only a confirmed update keeps `MediaItemId` live; the other two
    preserve the old annotations but never present them against the new content.
-5. **Antiforgery token delivery is provisional** (D14): the `DelegatingHandler` +
-   `AntiforgeryStateProvider` mechanism is downgraded from "the design" to "leading
-   candidate", with two alternatives and an expanded spike covering static SSR pages,
-   initial WebAssembly startup, login, logout, and session expiry.
+5. **Antiforgery token delivery is selected** (D14): the client uses mechanism B, an
+   authenticated, no-store `GET /api/antiforgery` endpoint backed by
+   `IAntiforgery.GetAndStoreTokens`, with a shared `DelegatingHandler` that refreshes
+   once for replayable requests. Static SSR forms retain framework form tokens.
 6. **Media path uniqueness applies to Active items only** (D15): the old
    `UNIQUE (FolderId, RelativePath)` made "keep the old row, create a new one at the same
    path" impossible. It is now a partial unique index `WHERE Status = 'Active'`, with
@@ -59,7 +61,7 @@ v7 fixes the edge cases where they interacted badly:
    ASP.NET Core's antiforgery middleware does *not* cover automatically.
 8. **Temporary-password expiry is enforced in a custom `SignInManager`**, with a defined
    no-lockout path.
-9. **Blazor spike is now a gated checklist**, not an open question.
+9. **Blazor P0 is a completed validation baseline**, with production tests preserving its coverage.
 
 **v5 changes** (previous revision, resolving the v4 review):
 
@@ -477,7 +479,7 @@ offers "Grant Read on `MyLab` too").
 Mia only `Drafts`, an Admin grants Read on `MyLab` and writes an explicit `CanRead = false`
 on the siblings she must not see (the UI lists them), or restructures so the shared part
 is not under a Private folder. A narrower "traverse only" permission would avoid this but
-is deliberately not added (see [Open questions](#open-questions-for-a-future-spec)); v7
+is deliberately not added (see the spec's [Implementation Decisions](Requirements.md#implementation-decisions)); v7
 picks the strict, easy-to-reason-about gate over a bypass.
 
 **Consequence for the v5 leak (unchanged):** John has `CanRead = true` on `Books`.
@@ -695,19 +697,18 @@ Rules for the implementation spec:
    covers JSON and DELETE, which the middleware does not.
 3. **The WebAssembly client attaches a token for every unsafe request through one
    `DelegatingHandler`** on the shared `HttpClient`; individual components never build the
-   header themselves. **How that handler obtains the token is provisional (D14).** v6
-   assumed the client can call `AntiforgeryStateProvider.GetAntiforgeryToken()` directly
-   ([Call a web API from Blazor — antiforgery support](https://learn.microsoft.com/aspnet/core/blazor/call-web-api?view=aspnetcore-10.0#antiforgery-support)).
-   That is documented for components rendered by the server, and it has **not** been shown
-   to work in this app's shape (global Interactive WebAssembly, `prerender: false`, a
-   client-owned `Routes.razor`), where the interactive tree never receives a
-   server-rendered page that could embed a token. Candidates, to be chosen by the spike:
+   header themselves. **D14 selects mechanism B.** The handler fetches a token from an
+   authenticated, same-origin `GET /api/antiforgery` endpoint using
+   `IAntiforgery.GetAndStoreTokens`; the response is `Cache-Control: no-store`, is not
+   CORS-enabled, and is refreshed after an authentication-state change or one replayable
+   request rejected by the antiforgery filter. The historical alternatives are retained
+   for design context only:
 
    | | Mechanism | Strength | Open risk |
    |---|---|---|---|
-   | A | `AntiforgeryStateProvider` token flowed to the client (e.g. persisted component state or a value emitted by the static shell in `App.razor`) | Standard framework token | Token is bound to the *identity at render time*; login, logout and expiry leave a stale token in a long-lived WebAssembly tree; needs a proven refresh |
-   | B | Dedicated authenticated `GET /api/antiforgery` endpoint returning a request token the handler caches and **re-fetches on 400 / on auth-state change** (`IAntiforgery.GetAndStoreTokens`) | Works with no server-rendered host page; refresh is explicit | An extra round trip; the GET must not be cacheable and must never be reachable cross-origin for a readable response |
-   | C | Mandatory custom request header (e.g. `X-Perene-Csrf: 1`) checked by the route-group filter, plus `SameSite` cookies and the Host allowlist, no token | No token lifecycle at all | Not a framework-documented antiforgery mechanism; a defense-in-depth, not equivalent to a validated token, and would need explicit sign-off as an accepted trade-off |
+   | A | `AntiforgeryStateProvider` token flowed to the client | Not selected | Long-lived WASM token lifecycle is less direct. |
+   | B | Dedicated authenticated `GET /api/antiforgery` endpoint returning a request token the handler caches and re-fetches on 400 / auth-state change | **Selected** | Extra same-origin round trip; response is non-cacheable and not CORS-enabled. |
+   | C | Mandatory custom request header plus `SameSite` cookies and the Host allowlist, no token | Rejected | Defense-in-depth only, not a framework antiforgery token. |
 
    **Regardless of the mechanism**, the handler must: (i) send the credential on every
    POST/PUT/PATCH/DELETE; (ii) on a `400` from the antiforgery filter, refresh the token
@@ -742,8 +743,8 @@ time, including the old path right after our rename.
 
 **Object identity (D12).** `Identify(path)` returns, server-side only:
 
-- **Files:** `FsFileId` (`st_dev:st_ino`, if the platform check in the open questions
-  passes) + size + mtime + `ContentFingerprint` (size + hash of fixed-offset chunks; a full
+- **Files:** `FsFileId` (`st_dev:st_ino`, when available through the best-effort platform
+  probe) + size + mtime + `ContentFingerprint` (size + hash of fixed-offset chunks; a full
   hash for small files and for `Staging`).
 - **Folders:** `FsFileId` + `ChildFingerprint` + child count. A folder with fewer than 3
   children and no reliable `FsFileId` **has no usable identity** — every recovery involving
@@ -881,14 +882,14 @@ implementation spec must resolve**, in order of risk:
    That means replacing the hardcoded render mode on `<Routes>` and `<HeadOutlet>`
    with this conditional. This is the one legitimate use of
    `[ExcludeFromInteractiveRouting]` that AGENTS.md already anticipates.
-3. **Routing gap (unverified, needs a hands-on spike).** The current `Router` has
+3. **Routing adaptation (validated by P0).** The current `Router` has
    `AppAssembly="typeof(Program).Assembly"` for the *client* assembly only, and uses
    `RouteView` rather than `AuthorizeRouteView`. Account pages living in the server
    project must be reachable by the *static* router (`AdditionalAssemblies`) and must
    trigger a full page load from the WebAssembly router rather than a client
-   `NotFound`. Whether links need a forced full reload, and whether `Routes.razor` can
-   stay client-owned for both modes, is not answered by the docs and must be proven in
-   the running app before the spec is finalized.
+   `NotFound`. P0 confirmed that account links force a full page load and that
+   `Routes.razor` remains client-owned for interactive routes while the server router
+   serves the static account routes.
 4. **Auth state must flow to WebAssembly.** Learn's pattern is
    `AddAuthenticationStateSerialization()` on the server and
    `AddAuthenticationStateDeserialization()` (+ `AddAuthorizationCore()`,
@@ -1301,12 +1302,16 @@ policy). `Books/MyLab` and `Books/Comics` are children of `Books`, both `Inherit
    delete endpoint and again when a background job runs — not only used to filter the
    sidebar.
 
-## Open questions for a future spec
+## Superseded discovery checklist
 
-- ⚠️ **Hands-on Blazor Identity spike — a gate before any migration work** (highest
-  risk). Against a throwaway branch of this app's global Interactive WebAssembly shape
-  ([render modes](https://learn.microsoft.com/aspnet/core/blazor/components/render-modes?view=aspnetcore-10.0)),
-  every item must pass, and the results go in the implementation spec's `Plan.md`:
+This section records the original discovery questions for traceability. The current
+specification resolves them in its **Implementation Decisions** section and P0 baseline;
+none is a prerequisite, approval request, or agent stop condition.
+
+- **Hands-on Blazor Identity P0 baseline — complete.** The following was exercised in
+  the app's global Interactive WebAssembly shape
+  ([render modes](https://learn.microsoft.com/aspnet/core/blazor/components/render-modes?view=aspnetcore-10.0))
+  and is retained as production-test coverage guidance:
   1. `[ExcludeFromInteractiveRouting]` account pages in the server project render as
      **static SSR** and are reachable from the client router without a `NotFound`
      (including via `NavLink` and a direct URL load).
@@ -1340,8 +1345,7 @@ policy). `Books/MyLab` and `Books/Comics` are children of `Books`, both `Inherit
        **and** multipart), absent on GET/HEAD, exactly one refresh-and-retry on 400.
      - **Endpoint-coverage test** (rule 7) passes and fails when an unsafe endpoint is
        added without the filter.
-     If no mechanism passes, the decision (and any accepted trade-off such as candidate C)
-     goes back to the user before the spec is finalized.
+     Mechanism B is selected in the current specification; no further decision is needed.
   6. The custom `SignInManager` overrides run on the password, 2FA, and recovery-code
      paths (temporary-password expiry and `IsActive`).
   7. SQLite `foreign_keys` is on per connection, and `AuthzVersion` bumps atomically with
@@ -1380,7 +1384,7 @@ Running log of external review feedback and the evidence used, across all revisi
 | Journal recovery relies on path existence | D12: identity captured at plan time (`FsFileId` + size + mtime + fingerprint); no-clobber disk primitives; **separate recovery tables** for Move/Rename, Delete, Replace, Create; strangers at the old path never block or get touched; identity mismatch or missing evidence → `NeedsReview`; folders without evidence never auto-recover | Design; four crash/interference tests listed; `FsFileId` feasibility still open |
 | Same-path media replacement keeps annotations on a possibly different book | D13: confirmed update / identity-changing replacement / uncertain, using an `IdentityKey` (EPUB OPF identifier + title/creator; CBZ page count + first/last entry CRC); superseded and uncertain items keep data but hide it; Admin can reattach or archive; `ContentRevision` on highlights and progress | Design; EPUB identifier reliability is an open question |
 | Media replacement violates `UNIQUE (FolderId, RelativePath)` (old row kept, new row at same path) | D15: partial unique index `WHERE Status = 'Active'`; explicit free-then-insert ordering (SQLite checks per statement); full transition table; lookups must include the predicate; history-table alternative rejected because the old `MediaItemId` must keep its annotations | [SQLite partial indexes](https://www.sqlite.org/partialindex.html); EF Core `HasFilter` support to be confirmed against Learn at implementation time |
-| Antiforgery token delivery unproven in the WebAssembly client | D14: server rule fixed, client mechanism provisional; three candidate mechanisms compared; handler retry/refresh/expiry rules; spike item 5 expanded into a per-scenario matrix (static SSR, startup, login, logout, expiry, two tabs, JSON/multipart/DELETE) | Learn documents `AntiforgeryStateProvider` for server-rendered components; its use from this app's client is **unverified** and must be proven in the spike (Microsoft Learn re-verification pending at implementation time per AGENTS.md) |
+| Antiforgery token delivery in the WebAssembly client | D14 selects mechanism B: an authenticated, no-store token endpoint with one shared handler and bounded replay behavior; the scenario matrix is retained as production coverage. | P0 is user-confirmed complete; implementation still follows the repo requirement to consult current Learn guidance for Microsoft-specific API details. |
 
 Known residual risks after v7: `FsFileId` reliability on the NAS mount; `IdentityKey`
 quality for EPUBs with missing/duplicated identifiers (drives review-queue volume); a stream

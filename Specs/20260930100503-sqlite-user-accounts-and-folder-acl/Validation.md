@@ -12,8 +12,8 @@
 
 | Requirement | Acceptance Criterion |
 | --- | --- |
-| FR1 | `Plan.md` contains a filled spike results table: every ERD spike item (1–7) and every antiforgery scenario (static SSR, startup, login, logout, expiry, role/`MustChangePassword` change, two tabs, JSON/multipart/DELETE handler behavior, coverage test) shows pass with a positive and a negative case; P1 merge is blocked otherwise. |
-| FR1 (amended) | The antiforgery spike rows show an invalid/missing/stale/other-user token rejected on **both** a WASM-issued API request and each static account/admin form, each with a passing positive case; retry-on-400 is shown working for a buffered JSON request and **not attempted** for a streamed/multipart upload. |
+| FR1 | `Plan.md` records the completed P0 baseline. The production test suite covers every corresponding behavior: static SSR, startup, login, logout, expiry, role/`MustChangePassword` change, two tabs, JSON/multipart/DELETE handler behavior, and endpoint coverage, with positive and negative cases. |
+| FR1 (amended) | Production antiforgery tests show an invalid/missing/stale/other-user token rejected on **both** a WASM-issued API request and each static account/admin form, each with a passing positive case; retry-on-400 works for a buffered JSON request and is **not attempted** for a streamed/multipart upload. |
 | FR2 | App fails to start with a clear message when `Database__Path` is relative, missing, unwritable, or inside `/archive`/`/previews`/cut/composition roots; starts and creates the file on the `appdata` volume otherwise. |
 | FR3 | A fresh DB is created purely by migrations; `dotnet ef migrations has-pending-model-changes` reports none; `PRAGMA foreign_keys` returns 1 on every opened connection; a bare delete violating an FK fails. |
 | FR4 | No UI, endpoint, or DB write ever stores an email; register, external-login, forgot-password, and personal-data routes return 404; sign-in works with username only. |
@@ -102,8 +102,8 @@ All tests are xUnit under `WebApp.Tests`, run only through `make test`, using a 
 - `WebApp.Tests/Endpoints/AdminUserEndpointsTests.cs`, `AdminAccessEndpointsTests.cs`, `AdminReviewEndpointsTests.cs`: FR9, FR24–FR26, FR28, FR49.
 - `WebApp.Tests/Endpoints/PathLeakTests.cs`: FR16, FR43, FR50 — serialize responses and logs from a representative run and assert the archive root and relative paths never appear.
 - `WebApp.Tests/Services/CrashRecoveryTests.cs`: FR51 crash-injection harness (fault points between protocol steps, restart, assert convergence).
-- P0 spike verification is a documented manual/browser checklist (below), not an automated test; ⚠️ TODO: add a Playwright-style automated check only if the repo adopts browser automation.
-- ⚠️ TODO: Concurrency stress test (workers + requests writing concurrently) for SQLite busy handling.
+- P0 is a completed validation baseline; its production behavior is covered by the listed unit and integration tests. Browser automation is optional future coverage, not a prerequisite for this implementation.
+- Add a SQLite busy-handling concurrency stress test to the implementation test suite; it is part of completion validation, not a prerequisite to beginning any workstream.
 
 **Regression tests for the review scenarios (added, not replacing the strategy above):**
 
@@ -142,8 +142,8 @@ All tests are xUnit under `WebApp.Tests`, run only through `make test`, using a 
 
 ## Definition of Done
 
-- Requirements, Plan, and Validation docs in this folder are updated, and the P0 spike results table in `Plan.md` is complete.
-- Every phase's gate (its FRs' acceptance criteria and manual steps) passed before the next phase began, including G1 (no ordinary users before server-side folder authorization), G2 (JSON services retired only after a verified importer run and verified backup), G3 (P5 deployed only after same-volume and cross-volume recovery tests), and G4 (verified backup before each phase's migration).
+- Requirements, Plan, and Validation docs in this folder are updated, and the P0 validation baseline in `Plan.md` is complete.
+- All FR acceptance criteria and release safeguards are met in the completed implementation, including G1 (no ordinary users before server-side folder authorization), G2 (JSON services retired only after a verified importer run and verified backup), G3 (P5 deployment only after same-volume and cross-volume recovery tests), and G4 (verified backup before production migrations). These are not agent phase-start gates.
 - All existing tests still pass; new behavior has tests matching the repo's xUnit conventions; `make test` is green.
 - All new NuGet packages and the `dotnet-ef` tool were installed via Docker (`make dotnet ...`), with versions and justification recorded in `Plan.md`.
 - New UI follows the design guide and Bootstrap-first rules, with responsive, empty, loading, error, and accessibility states verified.
