@@ -13,6 +13,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Testing
       ThumbnailCache__Path: /previews
+      Database__Path: /appdata/perene.db
       # Optional: set to "false" to disable hover-preview generation and serving entirely.
       # HoverPreview__Enabled: "true"
     volumes:
@@ -25,6 +26,7 @@ services:
       - /workspace/WebApp.Tests/obj
       - test_nuget_cache:/root/.nuget/packages
       - test_thumbnail_cache:/previews
+      - test_appdata:/appdata
     command:
       - sh
       - -lc
@@ -35,3 +37,4 @@ services:
 volumes:
   test_nuget_cache:
   test_thumbnail_cache:
+  test_appdata:

@@ -13,7 +13,7 @@ DOCKER_HOST := $(shell \
 	fi)
 export DOCKER_HOST
 
-.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert archive-group archive-share
+.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert archive-group archive-share admin-create admin-recover db-backup
 
 help:
 	@printf '%s\n' \
@@ -29,6 +29,7 @@ help:
 		'make docker-exec               Open the running web container shell' \
 		'make dotnet ARGS="build"       Run any dotnet command in Docker' \
 		'make test                      Run tests in an isolated stack' \
+		'make admin-create USER=<name>   Create the first Admin (after the web host migrated the database)' \
 		'make archive-group             Create or verify the host perenearchive group' \
 		'make archive-share USER=name [PERENE_ARCHIVE_ROOT=/path]  Grant an existing account archive-group access' \
 		'make get-url                   Show the URL to access the app from other LAN devices' \
@@ -84,6 +85,15 @@ docker-test:
 
 docker-test-shell:
 	$(COMPOSE) -p $(TEST_COMPOSE_PROJECT) -f docker-compose.test.yml run --rm --build tests bash
+
+admin-create:
+	@echo 'Admin CLI is enabled after the Identity migration is applied; use the Admin account page for lifecycle operations.' >&2; exit 2
+
+admin-recover:
+	@echo 'Admin recovery CLI is not available until the account lifecycle command is implemented.' >&2; exit 2
+
+db-backup:
+	@echo 'Verified database backup is not available until the backup service is implemented.' >&2; exit 2
 
 https-cert:
 	@mkdir -p https

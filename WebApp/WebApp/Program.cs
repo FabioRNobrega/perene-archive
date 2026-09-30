@@ -1,7 +1,12 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using WebApp.Client.Pages;
 using WebApp.Components;
 using WebApp.Configuration;
+using WebApp.Data;
 using WebApp.Endpoints;
+using WebApp.Identity;
 using WebApp.Services;
 
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
@@ -10,7 +15,49 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveWebAssemblyComponents();
+    .AddInteractiveWebAssemblyComponents()
+    .AddAuthenticationStateSerialization();
+builder.Services.AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+    .Validate(DatabaseOptions.IsValid, "Database:Path must be an absolute path in an existing writable directory.")
+    .ValidateOnStart();
+var databasePath = builder.Configuration.GetValue<string>("Database:Path") ?? "/appdata/perene.db";
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite($"Data Source={databasePath};Foreign Keys=True;Default Timeout=5"));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
+    .AddIdentityCookies();
+builder.Services.AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.User.RequireUniqueEmail = false;
+        options.SignIn.RequireConfirmedAccount = false;
+        // The local bootstrap account is explicitly requested as admin/admin. Operators should
+        // change it immediately through the authenticated change-password page.
+        options.Password.RequiredLength = 5;
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+    })
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddSignInManager();
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.LoginPath = "/account/login";
+    options.SlidingExpiration = true;
+});
+builder.Services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(1));
+builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+    .RequireAuthenticatedUser().Build());
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
+builder.Services.AddScoped<ApplicationSignInManager>();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo("/appdata/keys"))
+    .SetApplicationName("PereneArchive");
 builder.Services.AddOptions<VideoLibraryOptions>()
     .Bind(builder.Configuration.GetSection(VideoLibraryOptions.SectionName))
     .Validate(VideoLibraryOptions.HasConfiguredPath, "VideoLibrary:Path is required.")
@@ -187,6 +234,31 @@ builder.Services.AddSingleton<ITextDocumentService, TextDocumentService>();
 builder.Services.AddSingleton<ITextDocumentPdfExporter, TextDocumentPdfExporter>();
 
 var app = builder.Build();
+Directory.CreateDirectory("/appdata/keys");
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    if (!await roleManager.RoleExistsAsync("Admin"))
+        await roleManager.CreateAsync(new IdentityRole("Admin"));
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    if (await userManager.FindByNameAsync("admin") is null)
+    {
+        var defaultAdmin = new ApplicationUser
+        {
+            UserName = "admin",
+            DisplayName = "Administrator",
+            CreatedUtc = DateTimeOffset.UtcNow,
+            IsActive = true,
+            MustChangePassword = false
+        };
+        var creation = await userManager.CreateAsync(defaultAdmin, "admin");
+        if (!creation.Succeeded)
+            throw new InvalidOperationException("Unable to create the configured initial administrator account.");
+        await userManager.AddToRoleAsync(defaultAdmin, "Admin");
+    }
+}
 var configuredAllowedHosts = builder.Configuration["AllowedNetworkHosts:Hosts"]?
     .Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [];
 var allowedHostSet = new HashSet<string>(configuredAllowedHosts, StringComparer.OrdinalIgnoreCase)
@@ -237,8 +309,11 @@ app.Use(async (context, next) =>
 });
 
 app.UseAntiforgery();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapStaticAssets();
+app.MapAccountEndpoints();
 app.MapVideoEndpoints();
 app.MapCutEndpoints();
 app.MapCompositionEndpoints();

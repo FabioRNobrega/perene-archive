@@ -19,6 +19,7 @@ services:
         target: /archive
         read_only: false
       - thumbnail_cache:/previews
+      - appdata:/appdata
       - ./:/workspace
       - /workspace/WebApp/WebApp/bin
       - /workspace/WebApp/WebApp/obj
@@ -48,6 +49,7 @@ services:
       ArchiveRoot__Path: /archive
       VideoLibrary__Path: /archive/Videos
       ThumbnailCache__Path: /previews
+      Database__Path: /appdata/perene.db
       VideoCut__Path: /archive/Videos/Cuts
       VideoComposition__Path: /archive/Videos/VideoComposition
       AllowedNetworkHosts__Hosts: ${ALLOWED_NETWORK_HOSTS:-}
@@ -66,3 +68,4 @@ services:
 volumes:
   nuget_cache:
   thumbnail_cache:
+  appdata:
