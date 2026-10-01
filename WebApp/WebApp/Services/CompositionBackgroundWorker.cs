@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Models;
 
 namespace WebApp.Services;
@@ -7,6 +8,7 @@ internal sealed class CompositionBackgroundWorker(
     ICompositionGenerator generator,
     IVideoCompositionService compositions,
     ICompositionJobStatusStore statusStore,
+    IFolderJobAuthorizer jobAuthorizer,
     ILogger<CompositionBackgroundWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -29,6 +31,13 @@ internal sealed class CompositionBackgroundWorker(
 
             try
             {
+                if (!await jobAuthorizer.CanRunAsync(job, stoppingToken))
+                {
+                    statusStore.MarkFailed(job.JobId, "You no longer have access to complete this composition.");
+                    logger.LogWarning("Composition generation skipped for job {JobId}: the requester no longer has access.", job.JobId);
+                    continue;
+                }
+
                 var result = await generator.GenerateAsync(job, stoppingToken);
                 switch (result.Status)
                 {

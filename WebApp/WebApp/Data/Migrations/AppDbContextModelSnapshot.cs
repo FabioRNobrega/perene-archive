@@ -145,6 +145,137 @@ namespace WebApp.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("WebApp.Data.Entities.AccessPolicy", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DefaultCreate")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DefaultDelete")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DefaultRead")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DefaultWrite")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AccessPolicies", t =>
+                        {
+                            t.HasCheckConstraint("CK_AccessPolicies_Singleton", "\"Id\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("WebApp.Data.Entities.Folder", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AccessMode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ParentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("RootKey", "RelativePath")
+                        .IsUnique();
+
+                    b.ToTable("Folders");
+                });
+
+            modelBuilder.Entity("WebApp.Data.Entities.FolderPermission", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Create")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Delete")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enforced")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("FolderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("GrantedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LockMask")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Manage")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Read")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Write")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GrantedByUserId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("FolderId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("FolderPermissions");
+                });
+
             modelBuilder.Entity("WebApp.Identity.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
@@ -321,6 +452,54 @@ namespace WebApp.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("WebApp.Data.Entities.Folder", b =>
+                {
+                    b.HasOne("WebApp.Identity.ApplicationUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("WebApp.Data.Entities.Folder", "Parent")
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("WebApp.Data.Entities.FolderPermission", b =>
+                {
+                    b.HasOne("WebApp.Data.Entities.Folder", "Folder")
+                        .WithMany("Permissions")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WebApp.Identity.ApplicationUser", "GrantedBy")
+                        .WithMany()
+                        .HasForeignKey("GrantedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("WebApp.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Folder");
+
+                    b.Navigation("GrantedBy");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("WebApp.Data.Entities.Folder", b =>
+                {
+                    b.Navigation("Permissions");
                 });
 #pragma warning restore 612, 618
         }

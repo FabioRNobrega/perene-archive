@@ -83,7 +83,7 @@ public sealed class ArchiveMetricsServiceTests
         public string GetCategoryRootPath(string categoryKey) => rootForAllCategories;
 
         public ArchiveListing List(string categoryKey, string? folderId) => throw new NotSupportedException();
-        public ArchiveListing ListPlaylist(string categoryKey, string? folderId) => throw new NotSupportedException();
+        public ArchiveListing ListPlaylist(string categoryKey, string? folderId, Func<string, bool>? canEnterFolder = null) => throw new NotSupportedException();
         public ArchiveListing CreateFolder(string categoryKey, string? parentId, string name) => throw new NotSupportedException();
         public ArchiveListing CreateFile(string categoryKey, string? parentId, string name, string extension) => throw new NotSupportedException();
         public ArchiveUploadDestination ValidateUploadDestination(string categoryKey, string? parentId, string fileName) => throw new NotSupportedException();

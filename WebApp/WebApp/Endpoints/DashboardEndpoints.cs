@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Client.Models;
 using WebApp.Services;
 
@@ -49,12 +50,20 @@ internal static class DashboardEndpoints
             health));
     }
 
-    private static async Task<IResult> GetCustomStorageViews(ICustomStorageViewService customStorageViews, CancellationToken cancellationToken) =>
-        Results.Ok(await customStorageViews.GetAllAsync(cancellationToken));
+    // Custom storage views name folders and report their sizes, so they are an Admin tool; a member sees an empty list.
+    private static async Task<IResult> GetCustomStorageViews(HttpContext http, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken) =>
+        await ArchiveListingAccess.IsAdminAsync(http)
+            ? Results.Ok(await customStorageViews.GetAllAsync(cancellationToken))
+            : Results.Ok(Array.Empty<CustomStorageViewDto>());
 
     private static async Task<IResult> AddCustomStorageView(
-        AddCustomStorageViewRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+        HttpContext http, AddCustomStorageViewRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
     {
+        if (!await ArchiveListingAccess.IsAdminAsync(http))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         if (request.MaxSizeBytes <= 0)
         {
             return Results.BadRequest(new { error = "A positive max size is required." });
@@ -86,15 +95,25 @@ internal static class DashboardEndpoints
     }
 
     private static async Task<IResult> RemoveCustomStorageView(
-        string viewId, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+        HttpContext http, string viewId, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
     {
+        if (!await ArchiveListingAccess.IsAdminAsync(http))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         var views = await customStorageViews.RemoveAsync(viewId, cancellationToken);
         return views is null ? Results.NotFound() : Results.Ok(views);
     }
 
     private static async Task<IResult> UpdateCustomStorageView(
-        string viewId, UpdateCustomStorageViewMaxSizeRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
+        HttpContext http, string viewId, UpdateCustomStorageViewMaxSizeRequest request, ICustomStorageViewService customStorageViews, CancellationToken cancellationToken)
     {
+        if (!await ArchiveListingAccess.IsAdminAsync(http))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         if (request.MaxSizeBytes <= 0)
         {
             return Results.BadRequest(new { error = "A positive max size is required." });
@@ -107,16 +126,23 @@ internal static class DashboardEndpoints
     private static IResult GetNetwork(INetworkMetricsService networkMetricsService) =>
         Results.Ok(networkMetricsService.GetNetworkMetrics());
 
-    private static IResult GetArchive(IArchiveMetricsService archiveMetricsService) =>
-        Results.Ok(archiveMetricsService.GetArchiveMetrics());
+    // File counts only include folders the caller may read.
+    private static async Task<IResult> GetArchive(HttpContext http, IArchiveMetricsService archiveMetricsService) =>
+        Results.Ok(archiveMetricsService.GetArchiveMetrics(await ArchiveListingAccess.CanEnterAsync(http)));
 
-    private static IResult GetJobs(IVideoConversionJobStatusStore statuses) => Results.Ok(statuses.GetAll().Select(ToConversionDto));
-    private static IResult Pause(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Pause, statuses.Pause);
-    private static IResult Resume(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, statuses.Resume, controller.Resume);
-    private static IResult Stop(string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller) => Control(id, statuses, controller.Stop, statuses.Stop);
-    private static IResult Control(string id, IVideoConversionJobStatusStore statuses, Func<string, bool> processAction, Func<string, bool> statusAction)
+    // Conversion jobs name their source file, so a member only sees and controls the jobs they started; Admins see all.
+    private static async Task<IResult> GetJobs(HttpContext http, IVideoConversionJobStatusStore statuses, JobOwnerRegistry owners)
     {
-        if (statuses.Get(id) is null) return Results.NotFound();
+        var isAdmin = await ArchiveListingAccess.IsAdminAsync(http);
+        var userId = ArchiveListingAccess.UserId(http);
+        return Results.Ok(statuses.GetAll().Where(status => owners.IsVisibleTo(status.JobId, userId, isAdmin)).Select(ToConversionDto).ToList());
+    }
+    private static Task<IResult> Pause(HttpContext http, string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller, JobOwnerRegistry owners) => Control(http, id, statuses, owners, controller.Pause, statuses.Pause);
+    private static Task<IResult> Resume(HttpContext http, string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller, JobOwnerRegistry owners) => Control(http, id, statuses, owners, statuses.Resume, controller.Resume);
+    private static Task<IResult> Stop(HttpContext http, string id, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller, JobOwnerRegistry owners) => Control(http, id, statuses, owners, controller.Stop, statuses.Stop);
+    private static async Task<IResult> Control(HttpContext http, string id, IVideoConversionJobStatusStore statuses, JobOwnerRegistry owners, Func<string, bool> processAction, Func<string, bool> statusAction)
+    {
+        if (statuses.Get(id) is null || !owners.IsVisibleTo(id, ArchiveListingAccess.UserId(http), await ArchiveListingAccess.IsAdminAsync(http))) return Results.NotFound();
         if (!processAction(id) || !statusAction(id)) return Results.Conflict(new { message = "This conversion job is no longer in a state that can be controlled." });
         return Results.Ok(ToConversionDto(statuses.Get(id)!));
     }

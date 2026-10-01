@@ -7,7 +7,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using WebApp.Data;
+using WebApp.Identity;
 using Microsoft.Extensions.Options;
 
 namespace WebApp.Tests;
@@ -38,8 +43,41 @@ public static class TestHostSecurity
                 .AddScheme<AuthenticationSchemeOptions, TestAdminHandler>(Scheme, _ => { });
             services.RemoveAll<IAntiforgery>();
             services.AddSingleton<IAntiforgery, AcceptAllAntiforgery>();
+            services.AddHostedService<TestAdminSeeder>();
         });
     }
+
+    /// <summary>
+    /// Folder access decisions read the account from the database (Admin membership included), so the fake signed-in admin
+    /// needs a real row. It is created once the host starts, after migrations and role seeding have run.
+    /// </summary>
+    private sealed class TestAdminSeeder(IServiceScopeFactory scopes) : IHostedService
+    {
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            using var scope = scopes.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (await db.Users.AnyAsync(user => user.Id == AdminId, cancellationToken)) return;
+            db.Users.Add(new ApplicationUser
+            {
+                Id = AdminId,
+                UserName = "test-admin",
+                NormalizedUserName = "TEST-ADMIN",
+                DisplayName = "Test Admin",
+                CreatedUtc = DateTimeOffset.UtcNow,
+                IsActive = true,
+                MustChangePassword = false,
+                SecurityStamp = Guid.NewGuid().ToString("N")
+            });
+            var adminRoleId = await db.Roles.Where(role => role.Name == "Admin").Select(role => role.Id).FirstAsync(cancellationToken);
+            db.UserRoles.Add(new IdentityUserRole<string> { UserId = AdminId, RoleId = adminRoleId });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public const string AdminId = "test-admin";
 
     private sealed class TestAdminHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)

@@ -127,7 +127,7 @@ internal sealed class FfmpegVideoConversionGenerator(IVideoConversionProbe probe
  internal static IReadOnlyList<string> BuildArguments(string source,string output,MediaAction action,int crf) { var a=new List<string>{"-nostdin","-hide_banner","-loglevel","error","-progress","pipe:1","-nostats","-i",source,"-map","0","-map_metadata","0","-map_chapters","0"}; switch(action){case MediaAction.Remux:a.AddRange(["-c","copy"]);break;case MediaAction.ConvertAudio:a.AddRange(["-c:v","copy","-c:a","aac","-profile:a","aac_low","-pix_fmt","yuv420p"]);break;case MediaAction.CompressVideo:a.AddRange(["-c:v","libx264","-crf",crf.ToString(CultureInfo.InvariantCulture),"-c:a","aac","-profile:a","aac_low","-pix_fmt","yuv420p"]);break;default:a.AddRange(["-c:v","libx264","-crf",crf.ToString(CultureInfo.InvariantCulture),"-c:a","aac","-profile:a","aac_low","-pix_fmt","yuv420p"]);break;} a.AddRange(["-movflags","+faststart","-y",output]);return a; }
  private static bool Matches(ArchiveItemEntry source){try{var f=new FileInfo(source.PhysicalPath);return f.Exists&&f.Length==source.SizeBytes&&f.LastWriteTimeUtc==source.LastWriteTimeUtc;}catch{return false;}} private static bool IsValidMp4(VideoConversionProbeResult p)=>p.Duration>TimeSpan.Zero&&p.Container.Contains("mp4",StringComparison.OrdinalIgnoreCase)&&p.VideoCodec.Equals("h264",StringComparison.OrdinalIgnoreCase)&&(p.AudioCodec is null||p.AudioCodec.Equals("aac",StringComparison.OrdinalIgnoreCase));
 }
-internal sealed class VideoConversionBackgroundWorker(IVideoConversionJobQueue queue, IVideoConversionGenerator generator, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller, IArchiveService archive, ILogger<VideoConversionBackgroundWorker> logger) : BackgroundService
+internal sealed class VideoConversionBackgroundWorker(IVideoConversionJobQueue queue, IVideoConversionGenerator generator, IVideoConversionJobStatusStore statuses, IVideoConversionProcessController controller, IArchiveService archive, WebApp.Authorization.IFolderJobAuthorizer jobAuthorizer, ILogger<VideoConversionBackgroundWorker> logger) : BackgroundService
 {
  private readonly ConcurrentDictionary<Task, byte> _running = new();
  protected override async Task ExecuteAsync(CancellationToken token)
@@ -138,6 +138,7 @@ internal sealed class VideoConversionBackgroundWorker(IVideoConversionJobQueue q
    VideoConversionJob job;
    try { job = await queue.DequeueAsync(token); while (!statuses.TryBeginProcessing(job.JobId)) { if (statuses.Get(job.JobId)?.State != VideoConversionJobState.Pending) break; await Task.Delay(500, token); } } catch (OperationCanceledException) { break; }
    if (statuses.Get(job.JobId)?.State != VideoConversionJobState.Processing) { queue.Complete(); continue; }
+   if (!await jobAuthorizer.CanRunAsync(job, token)) { statuses.Fail(job.JobId, "You no longer have access to convert this file."); logger.LogWarning("Video conversion job {JobId} skipped: the requester no longer has access.", job.JobId); queue.Complete(); continue; }
    var run = RunJobAsync(job, token); _running[run] = 0; _ = run.ContinueWith(t => _running.TryRemove(t, out _), TaskScheduler.Default);
   }
   await Task.WhenAll(_running.Keys);

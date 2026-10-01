@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Client.Models;
 using WebApp.Models;
 using WebApp.Services;
@@ -17,19 +18,22 @@ internal static class VideoEndpoints
 
     public static IEndpointRouteBuilder MapVideoEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        var read = AccessRules.LibraryVideo(FolderOperation.Read);
         endpoints.MapPost("/api/videos/scan", ScanAsync);
         endpoints.MapGet("/api/videos", GetCurrentSnapshot);
-        endpoints.MapGet("/api/videos/{id}", GetVideoById);
-        endpoints.MapGet("/api/videos/{id}/stream", StreamAsync);
-        endpoints.MapPost("/api/videos/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync);
-        endpoints.MapGet("/api/videos/{id}/thumbnail", GetThumbnail);
-        endpoints.MapGet("/api/videos/{id}/preview", GetPreview);
-        endpoints.MapGet("/api/videos/{id}/subtitle", GetSubtitle);
-        endpoints.MapPost("/api/videos/{id}/cuts", CreateCutAsync);
+        endpoints.MapGet("/api/videos/{id}", GetVideoById).RequireFolderAccess(read);
+        endpoints.MapGet("/api/videos/{id}/stream", StreamAsync).RequireFolderAccess(read);
+        endpoints.MapPost("/api/videos/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/videos/{id}/thumbnail", GetThumbnail).RequireFolderAccess(read);
+        endpoints.MapGet("/api/videos/{id}/preview", GetPreview).RequireFolderAccess(read);
+        endpoints.MapGet("/api/videos/{id}/subtitle", GetSubtitle).RequireFolderAccess(read);
+        endpoints.MapPost("/api/videos/{id}/cuts", CreateCutAsync)
+            .RequireFolderAccess(AccessRules.All(read, AccessRules.Root(FolderLocator.CutRootKey, FolderOperation.Create)));
         return endpoints;
     }
 
     private static async Task<IResult> ScanAsync(
+        HttpContext http,
         IVideoLibraryService library,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
@@ -39,7 +43,7 @@ internal static class VideoEndpoints
     {
         try
         {
-            var entries = await library.ScanAsync(cancellationToken);
+            var entries = await FilterReadableAsync(http, await library.ScanAsync(cancellationToken));
             subtitleCoordinator.Reconcile(entries);
             var items = await Task.WhenAll(entries.Select(entry =>
                 BuildDto(entry, thumbnailCoordinator, hoverPreviewCoordinator, subtitleCoordinator, metadataCoordinator, cancellationToken)));
@@ -59,6 +63,7 @@ internal static class VideoEndpoints
     }
 
     private static async Task<IResult> GetCurrentSnapshot(
+        HttpContext http,
         IVideoLibraryService library,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
@@ -66,7 +71,7 @@ internal static class VideoEndpoints
         VideoMetadataCoordinator metadataCoordinator,
         CancellationToken cancellationToken)
     {
-        var entries = library.GetCurrentSnapshot();
+        var entries = await FilterReadableAsync(http, library.GetCurrentSnapshot());
         thumbnailCoordinator.Reconcile(entries);
         hoverPreviewCoordinator.Reconcile(entries);
         subtitleCoordinator.Reconcile(entries);
@@ -76,6 +81,7 @@ internal static class VideoEndpoints
     }
 
     private static async Task<IResult> GetVideoById(
+        HttpContext http,
         string id,
         IVideoLibraryService library,
         ThumbnailCoordinator thumbnailCoordinator,
@@ -85,7 +91,8 @@ internal static class VideoEndpoints
         CancellationToken cancellationToken)
     {
         var entry = await library.ResolveAsync(id, cancellationToken);
-        if (entry is null)
+        // ResolveAsync can rescan, so the entry it finds may not be the one the route filter saw: check it again.
+        if (entry is null || (await FilterReadableAsync(http, [entry])).Count == 0)
         {
             return Results.NotFound();
         }
@@ -95,11 +102,13 @@ internal static class VideoEndpoints
     }
 
     private static async Task<IResult> PrepareAudioTrackAsync(
+        HttpContext http,
         string id,
         int index,
         IVideoLibraryService library,
         VideoMetadataCoordinator metadataCoordinator,
         AudioTrackRemuxService remuxService,
+        IFolderJobAuthorizer jobAuthorizer,
         CancellationToken cancellationToken)
     {
         if (!library.TryResolve(id, out var entry) || entry is null ||
@@ -108,7 +117,9 @@ internal static class VideoEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new AudioTrackPrepareResponse(remuxService.Ensure(entry, index).ToString()));
+        var userId = ArchiveListingAccess.UserId(http);
+        return Results.Ok(new AudioTrackPrepareResponse(
+            remuxService.Ensure(entry, index, () => jobAuthorizer.CanReadAsync(userId, entry, CancellationToken.None)).ToString()));
     }
 
     internal static async Task<bool> IsValidAudioTrackAsync(
@@ -277,6 +288,7 @@ internal static class VideoEndpoints
     }
 
     private static async Task<IResult> CreateCutAsync(
+        HttpContext http,
         string id,
         VideoCutRequest request,
         IVideoLibraryService library,
@@ -315,13 +327,23 @@ internal static class VideoEndpoints
         }
 
         var jobId = Guid.NewGuid().ToString("N");
-        var job = new CutJob(jobId, entry, TimeSpan.FromSeconds(request.Start), TimeSpan.FromSeconds(request.End));
+        var job = new CutJob(jobId, entry, TimeSpan.FromSeconds(request.Start), TimeSpan.FromSeconds(request.End), ArchiveListingAccess.UserId(http));
         if (!queue.TryEnqueue(job))
         {
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 
         return Results.Accepted($"/api/cuts", new VideoCutResponse(jobId));
+    }
+
+    /// <summary>Keeps only the library videos whose folder the caller may read; Admins see everything.</summary>
+    internal static async Task<IReadOnlyList<VideoFileEntry>> FilterReadableAsync(HttpContext http, IReadOnlyList<VideoFileEntry> entries)
+    {
+        var readable = await http.RequestServices.GetRequiredService<FolderAuthorizer>().GetReadableAsync(http.User, http.RequestAborted);
+        if (readable is null) return [];
+        if (readable.IsAdmin) return entries;
+        var locator = http.RequestServices.GetRequiredService<FolderLocator>();
+        return entries.Where(entry => locator.LocateContainer(entry.PhysicalPath) is { } location && readable.IsReadable(location)).ToList();
     }
 
     private static async Task<VideoItemDto> BuildDto(

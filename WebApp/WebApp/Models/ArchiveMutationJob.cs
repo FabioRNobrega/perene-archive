@@ -14,7 +14,8 @@ internal sealed record ArchiveMutationJob(
     bool IsFolder,
     int TotalItems,
     string Label,
-    IReadOnlyList<ArchiveMutationBatchEntry>? BatchEntries = null);
+    IReadOnlyList<ArchiveMutationBatchEntry>? BatchEntries = null,
+    string? ActorUserId = null);
 
 /// <summary>
 /// One planned move within a <see cref="ArchiveMutationKind.BatchMove"/> job, produced by

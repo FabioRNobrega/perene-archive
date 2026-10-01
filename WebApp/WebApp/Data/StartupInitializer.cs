@@ -24,6 +24,9 @@ public static class StartupInitializer
         if (!await roles.RoleExistsAsync(AccountLifecycleService.AdminRole))
             await roles.CreateAsync(new IdentityRole(AccountLifecycleService.AdminRole));
 
+        // Roots and the policy singleton are seeded once; existing members simply fall to the Shared defaults.
+        await scope.ServiceProvider.GetRequiredService<Authorization.FolderCatalog>().SeedAsync();
+
         // Seed only when absent: an existing account's password, TOTP, recovery codes, roles and flags are never touched.
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         if (await users.FindByNameAsync(DefaultAdminUserName) is not null) return;

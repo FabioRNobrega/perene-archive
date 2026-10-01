@@ -6,7 +6,8 @@ internal interface IArchiveService
 {
     ArchiveListing List(string categoryKey, string? folderId);
 
-    ArchiveListing ListPlaylist(string categoryKey, string? folderId);
+    /// <param name="canEnterFolder">When set, a sub-directory is skipped unless it returns true for its physical path (access filtering).</param>
+    ArchiveListing ListPlaylist(string categoryKey, string? folderId, Func<string, bool>? canEnterFolder = null);
 
     ArchiveListing CreateFolder(string categoryKey, string? parentId, string name);
 

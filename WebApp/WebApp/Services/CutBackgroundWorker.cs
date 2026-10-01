@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Models;
 
 namespace WebApp.Services;
@@ -6,6 +7,7 @@ internal sealed class CutBackgroundWorker(
     ICutJobQueue queue,
     ICutGenerator generator,
     IVideoCutService cuts,
+    IFolderJobAuthorizer jobAuthorizer,
     ILogger<CutBackgroundWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -26,6 +28,12 @@ internal sealed class CutBackgroundWorker(
 
             try
             {
+                if (!await jobAuthorizer.CanRunAsync(job, stoppingToken))
+                {
+                    logger.LogWarning("Cut generation skipped for media {MediaId} (job {JobId}): the requester no longer has access.", job.SourceEntry.Id, job.JobId);
+                    continue;
+                }
+
                 var result = await generator.GenerateAsync(job, stoppingToken);
                 switch (result.Status)
                 {

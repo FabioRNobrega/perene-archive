@@ -122,9 +122,15 @@ public sealed class AccountLifecycleService(
                 return LifecycleResult.Fail(LifecycleFailure.LastAdministrator, "The last active administrator cannot be deleted.");
             await db.Users.Where(user => user.CreatedByUserId == target.Id)
                 .ExecuteUpdateAsync(set => set.SetProperty(user => user.CreatedByUserId, actorId));
+            // Folder ownership moves to the acting Admin before the Restrict foreign key could block the delete.
+            var reassignedFolders = await db.Folders.Where(folder => folder.OwnerUserId == target.Id)
+                .ExecuteUpdateAsync(set => set.SetProperty(folder => folder.OwnerUserId, actorId));
+            // The user's permission rows cascade away with the account, so cached access decisions must be invalidated.
+            await db.AccessPolicies.ExecuteUpdateAsync(set => set.SetProperty(policy => policy.Version, policy => policy.Version + 1));
             var deleted = await users.DeleteAsync(target);
             if (!deleted.Succeeded) return Rejected(deleted);
             Audit("user.deleted", actorId, target, $"reassigned-to={actorId}");
+            if (reassignedFolders > 0) Audit("folder.owner-reassigned", actorId, target, $"folders={reassignedFolders}; reassigned-to={actorId}");
             await db.SaveChangesAsync();
             return LifecycleResult.Ok();
         });

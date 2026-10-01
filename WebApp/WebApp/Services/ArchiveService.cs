@@ -71,12 +71,12 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return BuildListing(category, folder);
     }
 
-    public ArchiveListing ListPlaylist(string categoryKey, string? folderId)
+    public ArchiveListing ListPlaylist(string categoryKey, string? folderId, Func<string, bool>? canEnterFolder = null)
     {
         var category = ResolveCategory(categoryKey);
         var folder = ResolveFolder(category, folderId);
         var items = new List<ArchiveItemEntry>();
-        CollectPlayableMedia(category, folder, items);
+        CollectPlayableMedia(category, folder, items, canEnterFolder);
         return new ArchiveListing(
             category,
             folder,
@@ -852,7 +852,7 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
         return false;
     }
 
-    private void CollectPlayableMedia(ArchiveCategory category, ArchiveItemEntry folder, List<ArchiveItemEntry> results)
+    private void CollectPlayableMedia(ArchiveCategory category, ArchiveItemEntry folder, List<ArchiveItemEntry> results, Func<string, bool>? canEnterFolder)
     {
         IEnumerable<string> paths;
         try
@@ -881,7 +881,12 @@ internal sealed class ArchiveService(IOptions<ArchiveRootOptions> options) : IAr
                 var isDirectory = (attributes & FileAttributes.Directory) != 0;
                 if (isDirectory)
                 {
-                    CollectPlayableMedia(category, CreateEntry(category, canonicalPath), results);
+                    if (canEnterFolder is not null && !canEnterFolder(canonicalPath))
+                    {
+                        continue;
+                    }
+
+                    CollectPlayableMedia(category, CreateEntry(category, canonicalPath), results, canEnterFolder);
                     continue;
                 }
 

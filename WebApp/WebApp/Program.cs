@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using WebApp.Authorization;
 using WebApp.Client.Pages;
 using WebApp.Components;
 using WebApp.Configuration;
@@ -83,6 +85,18 @@ builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(new Microsoft.AspNe
 builder.Services.AddAntiforgery(options => options.HeaderName = AntiforgeryEndpointFilter.HeaderName);
 builder.Services.AddScoped<ApplicationSignInManager>();
 builder.Services.AddScoped<AccountLifecycleService>();
+builder.Services.AddSingleton<AccessCaches>();
+builder.Services.AddSingleton<FolderLocator>();
+builder.Services.AddSingleton<JobOwnerRegistry>();
+builder.Services.AddSingleton<IFolderJobAuthorizer, FolderJobAuthorizer>();
+builder.Services.AddSingleton<IFolderPathSync, FolderPathSync>();
+builder.Services.AddScoped<AuthzVersionStore>();
+builder.Services.AddScoped<FolderAccessService>();
+builder.Services.AddScoped<FolderAuthorizer>();
+builder.Services.AddScoped<IAuthorizationHandler, FolderPermissionAuthorizationHandler>();
+builder.Services.AddScoped<FolderCatalog>();
+builder.Services.AddScoped<PermissionWriteService>();
+builder.Services.AddScoped<FolderAccessEditorService>();
 builder.Services.AddPereneDataProtection(builder.Configuration);
 builder.Services.AddOptions<VideoLibraryOptions>()
     .Bind(builder.Configuration.GetSection(VideoLibraryOptions.SectionName))

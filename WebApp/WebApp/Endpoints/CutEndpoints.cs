@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Client.Models;
 using WebApp.Models;
 using WebApp.Services;
@@ -17,14 +18,16 @@ internal static class CutEndpoints
 
     public static IEndpointRouteBuilder MapCutEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        var read = AccessRules.Root(FolderLocator.CutRootKey, FolderOperation.Read);
         endpoints.MapGet("/api/cuts", GetCurrentSnapshot);
-        endpoints.MapGet("/api/cuts/{id}/stream", StreamAsync);
-        endpoints.MapGet("/api/cuts/{id}/thumbnail", GetThumbnail);
-        endpoints.MapGet("/api/cuts/{id}/preview", GetPreview);
+        endpoints.MapGet("/api/cuts/{id}/stream", StreamAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/cuts/{id}/thumbnail", GetThumbnail).RequireFolderAccess(read);
+        endpoints.MapGet("/api/cuts/{id}/preview", GetPreview).RequireFolderAccess(read);
         return endpoints;
     }
 
     private static async Task<IResult> GetCurrentSnapshot(
+        HttpContext http,
         IVideoCutService cuts,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
@@ -33,7 +36,7 @@ internal static class CutEndpoints
     {
         try
         {
-            var entries = await cuts.ScanAsync(cancellationToken);
+            var entries = await VideoEndpoints.FilterReadableAsync(http, await cuts.ScanAsync(cancellationToken));
             thumbnailCoordinator.Reconcile(entries);
             hoverPreviewCoordinator.Reconcile(entries);
             var items = await Task.WhenAll(entries.Select(entry =>

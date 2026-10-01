@@ -17,9 +17,9 @@ internal sealed class ArchiveMetricsService(
 {
     private static readonly string[] FfmpegProcessNames = ["ffmpeg", "ffprobe"];
 
-    public DashboardArchiveDto GetArchiveMetrics()
+    public DashboardArchiveDto GetArchiveMetrics(Func<string, bool>? canEnterFolder = null)
     {
-        var files = CountFiles();
+        var files = CountFiles(canEnterFolder);
         var activeFfmpegProcesses = processLister.GetRunningProcessNames()
             .Count(name => FfmpegProcessNames.Contains(name, StringComparer.OrdinalIgnoreCase));
 
@@ -44,7 +44,7 @@ internal sealed class ArchiveMetricsService(
             archiveMutationJobQueue.ActiveCount);
     }
 
-    private ArchiveFileCounts CountFiles()
+    private ArchiveFileCounts CountFiles(Func<string, bool>? canEnterFolder)
     {
         var counts = new ArchiveFileCounts();
         foreach (var category in ArchiveCategory.Defaults)
@@ -57,12 +57,7 @@ internal sealed class ArchiveMetricsService(
                     continue;
                 }
 
-                foreach (var path in Directory.EnumerateFiles(root, "*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    AttributesToSkip = FileAttributes.ReparsePoint,
-                    IgnoreInaccessible = true,
-                }))
+                foreach (var path in EnumerateFiles(root, canEnterFolder))
                 {
                     counts.Add(Path.GetExtension(path));
                 }
@@ -74,6 +69,46 @@ internal sealed class ArchiveMetricsService(
         }
 
         return counts;
+    }
+
+    private static IEnumerable<string> EnumerateFiles(string root, Func<string, bool>? canEnterFolder)
+    {
+        if (canEnterFolder is null)
+        {
+            return Directory.EnumerateFiles(root, "*", new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+                IgnoreInaccessible = true,
+            });
+        }
+
+        return EnumerateReadableFiles(root, canEnterFolder);
+    }
+
+    private static IEnumerable<string> EnumerateReadableFiles(string root, Func<string, bool> canEnterFolder)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        var options = new EnumerationOptions { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true };
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            if (!canEnterFolder(directory))
+            {
+                continue;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*", options))
+            {
+                yield return file;
+            }
+
+            foreach (var child in Directory.EnumerateDirectories(directory, "*", options))
+            {
+                pending.Push(child);
+            }
+        }
     }
 
     private sealed class ArchiveFileCounts

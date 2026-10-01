@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
+using WebApp.Authorization;
 using WebApp.Client.Models;
 using WebApp.Configuration;
 using WebApp.Models;
@@ -12,60 +13,64 @@ internal static class ArchiveEndpoints
 {
     public static IEndpointRouteBuilder MapArchiveEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        var read = AccessRules.ArchiveItem((FolderOperation.Read, ItemTarget.Self));
+        var readAndCreateBeside = AccessRules.ArchiveItem((FolderOperation.Read, ItemTarget.Self), (FolderOperation.Create, ItemTarget.Container));
+        var writeSelf = AccessRules.ArchiveItem((FolderOperation.Write, ItemTarget.Self));
+        var removeItem = AccessRules.ArchiveItem((FolderOperation.Delete, ItemTarget.Container), (FolderOperation.Read, ItemTarget.Subtree));
         endpoints.MapGet("/api/books/reader-themes", GetReaderThemesAsync);
         endpoints.MapPut("/api/books/reader-themes/active", SaveActiveReaderThemeAsync);
         endpoints.MapPost("/api/books/reader-themes", CreateReaderThemeAsync);
         endpoints.MapPut("/api/books/reader-themes/{themeId}", UpdateReaderThemeAsync);
         endpoints.MapDelete("/api/books/reader-themes/{themeId}", DeleteReaderThemeAsync);
         endpoints.MapGet("/api/archive/{category}/items", List);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/download", DownloadAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/audio", StreamAudio);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/cover", GetAlbumCover);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/comic", GetComic);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/pages/{index:int}", GetComicPage);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/folder-thumbnail", UploadFolderThumbnailAsync).DisableAntiforgery();
-        endpoints.MapDelete("/api/archive/{category}/items/{id}/folder-thumbnail", DeleteFolderThumbnail);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/folder-thumbnail", GetFolderThumbnail);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/crop", CreateCropAsync);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion/preview", PreviewConversionAsync);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion", CreateConversionAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/text", GetTextDocument);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/text/preview", PreviewTextDocument);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/text", SaveTextDocument);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/text/export-pdf", ExportTextDocumentPdf);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/pdf", GetPdfDocument);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book", GetBookAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/cover", GetBookCover);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/chapters/{chapterId}", GetBookChapter);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/book/notes", SaveBookNoteAsync);
-        endpoints.MapDelete("/api/archive/{category}/items/{id}/book/notes/{noteId}", RemoveBookNoteAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/highlights", GetBookHighlightsAsync);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/progress", GetBookProgressAsync);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync);
-        endpoints.MapPost("/api/archive/{category}/folders", CreateFolder);
-        endpoints.MapPost("/api/archive/{category}/files", CreateFile);
-        endpoints.MapPost("/api/archive/{category}/uploads", CreateUploadSession);
-        endpoints.MapGet("/api/archive/{category}/uploads", ListUploadSessions);
-        endpoints.MapGet("/api/archive/{category}/uploads/{uploadId}", GetUploadStatus);
-        endpoints.MapPut("/api/archive/{category}/uploads/{uploadId}/chunk", AppendUploadChunkAsync).DisableAntiforgery();
-        endpoints.MapPost("/api/archive/{category}/uploads/{uploadId}/complete", CompleteUploadAsync);
-        endpoints.MapDelete("/api/archive/{category}/uploads/{uploadId}", CancelUploadAsync);
-        endpoints.MapPatch("/api/archive/{category}/items/{id}/name", Rename);
-        endpoints.MapPatch("/api/archive/{category}/items/{id}/location", Move);
-        endpoints.MapPatch("/api/archive/{category}/items/location", BatchMove);
-        endpoints.MapPost("/api/archive/{category}/items/trash", BatchMoveToTrash);
-        endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash);
-        endpoints.MapDelete("/api/archive/{category}/items", EmptyTrash);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/download", DownloadAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/audio", StreamAudio).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/cover", GetAlbumCover).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic", GetComic).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/pages/{index:int}", GetComicPage).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync).RequireFolderAccess(read);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/folder-thumbnail", UploadFolderThumbnailAsync).DisableAntiforgery().RequireFolderAccess(writeSelf);
+        endpoints.MapDelete("/api/archive/{category}/items/{id}/folder-thumbnail", DeleteFolderThumbnail).RequireFolderAccess(writeSelf);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/folder-thumbnail", GetFolderThumbnail).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/preview", GetPreview).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/subtitle", GetSubtitle).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/crop", CreateCropAsync).RequireFolderAccess(AccessRules.Crop());
+        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion/preview", PreviewConversionAsync).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/conversion", CreateConversionAsync).RequireFolderAccess(readAndCreateBeside);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/text", GetTextDocument).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/text/preview", PreviewTextDocument).RequireFolderAccess(read);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/text", SaveTextDocument).RequireFolderAccess(AccessRules.ArchiveItem((FolderOperation.Write, ItemTarget.Container)));
+        endpoints.MapPost("/api/archive/{category}/items/{id}/text/export-pdf", ExportTextDocumentPdf).RequireFolderAccess(readAndCreateBeside);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/pdf", GetPdfDocument).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book", GetBookAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/cover", GetBookCover).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/chapters/{chapterId}", GetBookChapter).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/book/notes", SaveBookNoteAsync).RequireFolderAccess(read);
+        endpoints.MapDelete("/api/archive/{category}/items/{id}/book/notes/{noteId}", RemoveBookNoteAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/highlights", GetBookHighlightsAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/progress", GetBookProgressAsync).RequireFolderAccess(read);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/folders", CreateFolder).RequireFolderAccess(AccessRules.CreateInParent<CreateFolderRequest>(request => request.ParentId));
+        endpoints.MapPost("/api/archive/{category}/files", CreateFile).RequireFolderAccess(AccessRules.CreateInParent<CreateFileRequest>(request => request.ParentId));
+        endpoints.MapPost("/api/archive/{category}/uploads", CreateUploadSession).RequireFolderAccess(AccessRules.CreateInParent<ArchiveUploadCreateRequest>(request => request.ParentId));
+        endpoints.MapGet("/api/archive/{category}/uploads", ListUploadSessions).RequireFolderAccess(AccessRules.ArchiveFolder(FolderOperation.Read, context => context.HttpContext.Request.Query["parentId"].ToString()));
+        endpoints.MapGet("/api/archive/{category}/uploads/{uploadId}", GetUploadStatus).RequireFolderAccess(AccessRules.UploadSession());
+        endpoints.MapPut("/api/archive/{category}/uploads/{uploadId}/chunk", AppendUploadChunkAsync).DisableAntiforgery().RequireFolderAccess(AccessRules.UploadSession());
+        endpoints.MapPost("/api/archive/{category}/uploads/{uploadId}/complete", CompleteUploadAsync).RequireFolderAccess(AccessRules.UploadSession());
+        endpoints.MapDelete("/api/archive/{category}/uploads/{uploadId}", CancelUploadAsync).RequireFolderAccess(AccessRules.UploadSession());
+        endpoints.MapPatch("/api/archive/{category}/items/{id}/name", Rename).RequireFolderAccess(AccessRules.ArchiveItem((FolderOperation.Write, ItemTarget.Container), (FolderOperation.Read, ItemTarget.Subtree)));
+        endpoints.MapPatch("/api/archive/{category}/items/{id}/location", Move).RequireFolderAccess(AccessRules.Move());
+        endpoints.MapPatch("/api/archive/{category}/items/location", BatchMove).RequireFolderAccess(AccessRules.BatchMove());
+        endpoints.MapPost("/api/archive/{category}/items/trash", BatchMoveToTrash).RequireFolderAccess(AccessRules.BatchTrash());
+        endpoints.MapDelete("/api/archive/{category}/items/{id}", MoveToTrash).RequireFolderAccess(removeItem);
+        endpoints.MapDelete("/api/archive/{category}/items", EmptyTrash).RequireFolderAccess(AccessRules.EmptyCategory());
         endpoints.MapGet("/api/archive/jobs", GetJobs);
         return endpoints;
     }
@@ -111,7 +116,7 @@ internal static class ArchiveEndpoints
             : Results.Ok(ToPlanDto(item, media, profile!, catalog, options.Value));
     }
 
-    private static async Task<IResult> CreateConversionAsync(string category, string id, VideoConversionSelectionDto selection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateConversionAsync(HttpContext http, JobOwnerRegistry owners, string category, string id, VideoConversionSelectionDto selection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
     {
         if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
         if (statuses.HasActiveSource(item.Id)) return Results.Conflict(new { error = "A conversion is already active for this file." });
@@ -119,7 +124,9 @@ internal static class ArchiveEndpoints
         if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
         var serverSelection = new VideoConversionSelection(selection.Mode, selection.OutputHeight, selection.QualityPreset, selection.TargetSizeBytes, selection.SelectedSubtitleStreamIndex, selection.BurnClosedCaptions);
         if (!resolver.TryResolve(media, item.SizeBytes, serverSelection, out var profile, out var error)) return Results.BadRequest(new { error });
-        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile);
+        var userId = ArchiveListingAccess.UserId(http);
+        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile, userId);
+        owners.Set(job.JobId, userId);
         statuses.Seed(job);
         if (!queue.TryEnqueue(job)) { statuses.Remove(job.JobId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
         return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.GetAll().Single(x => x.JobId == job.JobId)));
@@ -135,6 +142,7 @@ internal static class ArchiveEndpoints
         media.HasSubtitles ? "The selected embedded subtitle is permanently burned into the video and cannot be toggled later." : "Embedded subtitles are not included in converted MP4 files.");
 
     private static async Task<IResult> List(
+        HttpContext http,
         string category,
         string? folderId,
         IArchiveService archive,
@@ -147,7 +155,8 @@ internal static class ArchiveEndpoints
         CancellationToken cancellationToken) =>
         await ExecuteAsync(async () =>
         {
-            var listing = archive.List(category, folderId);
+            var listing = await ArchiveListingAccess.FilterAsync(archive.List(category, folderId), http)
+                ?? throw new ArchiveNotFoundException("The folder does not exist.");
             var dto = await ToDtoAsync(
             listing,
             thumbnailCoordinator,
@@ -177,6 +186,7 @@ internal static class ArchiveEndpoints
     }
 
     private static async Task<IResult> GetPlaylist(
+        HttpContext http,
         string category,
         string id,
         IArchiveService archive,
@@ -186,8 +196,8 @@ internal static class ArchiveEndpoints
         VideoMetadataCoordinator metadataCoordinator,
         IEpubBookService epubBookService,
         CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.ListPlaylist(category, id),
+        await ExecuteAsync(async () => await ToDtoAsync(
+            archive.ListPlaylist(category, id, await ArchiveListingAccess.CanEnterAsync(http)),
             thumbnailCoordinator,
             hoverPreviewCoordinator,
             subtitleCoordinator,
@@ -196,23 +206,36 @@ internal static class ArchiveEndpoints
             cancellationToken));
 
     private static async Task<IResult> CreateFolder(
+        HttpContext http,
         string category,
         CreateFolderRequest request,
         IArchiveService archive,
+        FolderCatalog catalog,
+        FolderLocator locator,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
         SubtitleCoordinator subtitleCoordinator,
         VideoMetadataCoordinator metadataCoordinator,
         IEpubBookService epubBookService,
         CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.CreateFolder(category, request.ParentId, request.Name),
+        await ExecuteAsync(async () =>
+        {
+            var created = archive.CreateFolder(category, request.ParentId, request.Name);
+            // The creator owns the new folder (Read/Write/Create/Delete, never Manage); it is Shared unless Private was chosen.
+            if (locator.LocateDirectory(Path.Combine(created.CurrentFolder.PhysicalPath, request.Name.Trim())) is { } location)
+            {
+                await catalog.RegisterCreatedAsync(location, ArchiveListingAccess.UserId(http), request.IsPrivate, cancellationToken);
+            }
+
+            return await ToDtoAsync(
+            created,
             thumbnailCoordinator,
             hoverPreviewCoordinator,
             subtitleCoordinator,
             metadataCoordinator,
             epubBookService,
-            cancellationToken));
+            cancellationToken);
+        });
 
     private static async Task<IResult> CreateFile(
         string category,
@@ -380,72 +403,106 @@ internal static class ArchiveEndpoints
         string id,
         RenameArchiveItemRequest request,
         IArchiveService archive,
+        FolderCatalog catalog,
+        FolderLocator locator,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
         SubtitleCoordinator subtitleCoordinator,
         VideoMetadataCoordinator metadataCoordinator,
         IEpubBookService epubBookService,
         CancellationToken cancellationToken) =>
-        await ExecuteAsync(() => ToDtoAsync(
-            archive.Rename(category, id, request.Name),
+        await ExecuteAsync(async () =>
+        {
+            archive.TryResolveItem(category, id, out var before);
+            var renamed = archive.Rename(category, id, request.Name);
+            // Folder rows follow a renamed folder so its owner, mode, and permissions stay attached.
+            if (before is { Kind: ArchiveItemKind.Folder } &&
+                locator.LocateDirectory(before.PhysicalPath) is { } from &&
+                locator.LocateDirectory(Path.Combine(Path.GetDirectoryName(before.PhysicalPath)!, request.Name.Trim())) is { } to)
+            {
+                await catalog.RelocateAsync(from, to, cancellationToken);
+            }
+
+            return await ToDtoAsync(
+            renamed,
             thumbnailCoordinator,
             hoverPreviewCoordinator,
             subtitleCoordinator,
             metadataCoordinator,
             epubBookService,
-            cancellationToken));
+            cancellationToken);
+        });
 
     private static IResult Move(
+        HttpContext http,
+        JobOwnerRegistry owners,
         string category,
         string id,
         MoveArchiveItemRequest request,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
-        EnqueueMutation(() => archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId), queue, statuses);
+        EnqueueMutation(http, () => archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId), queue, statuses, owners);
 
     private static IResult BatchMove(
+        HttpContext http,
+        JobOwnerRegistry owners,
         string category,
         BatchMoveArchiveItemsRequest request,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
-        EnqueueMutation(() => archive.BatchMove(category, request.ItemIds, request.DestinationCategory, request.DestinationFolderId), queue, statuses);
+        EnqueueMutation(http, () => archive.BatchMove(category, request.ItemIds, request.DestinationCategory, request.DestinationFolderId), queue, statuses, owners);
 
     private static IResult BatchMoveToTrash(
+        HttpContext http,
+        JobOwnerRegistry owners,
         string category,
         BatchMoveToTrashArchiveItemsRequest request,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
-        EnqueueMutation(() => archive.BatchMoveToTrash(category, request.ItemIds), queue, statuses);
+        EnqueueMutation(http, () => archive.BatchMoveToTrash(category, request.ItemIds), queue, statuses, owners);
 
     private static IResult MoveToTrash(
+        HttpContext http,
+        JobOwnerRegistry owners,
         string category,
         string id,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
-        EnqueueMutation(() => archive.MoveToTrash(category, id), queue, statuses);
+        EnqueueMutation(http, () => archive.MoveToTrash(category, id), queue, statuses, owners);
 
     private static IResult EmptyTrash(
+        HttpContext http,
+        JobOwnerRegistry owners,
         string category,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
-        EnqueueMutation(() => archive.EmptyTrash(category), queue, statuses);
+        EnqueueMutation(http, () => archive.EmptyTrash(category), queue, statuses, owners);
 
-    private static IResult GetJobs(IArchiveMutationJobStatusStore statuses) =>
-        Results.Ok(statuses.GetAll().Select(ToMutationDto).ToList());
+    private static async Task<IResult> GetJobs(HttpContext http, IArchiveMutationJobStatusStore statuses, JobOwnerRegistry owners)
+    {
+        // Job labels carry item names, so a member only sees the jobs they started; Admins see all.
+        var isAdmin = await ArchiveListingAccess.IsAdminAsync(http);
+        var userId = ArchiveListingAccess.UserId(http);
+        return Results.Ok(statuses.GetAll().Where(status => owners.IsVisibleTo(status.JobId, userId, isAdmin)).Select(ToMutationDto).ToList());
+    }
 
     private static IResult EnqueueMutation(
+        HttpContext http,
         Func<ArchiveMutationJob> action,
         IArchiveMutationJobQueue queue,
-        IArchiveMutationJobStatusStore statuses)
+        IArchiveMutationJobStatusStore statuses,
+        JobOwnerRegistry owners)
     {
         try
         {
-            var job = action();
+            var userId = ArchiveListingAccess.UserId(http);
+            var job = action() with { ActorUserId = userId };
+            owners.Set(job.JobId, userId);
             statuses.Seed(job);
             if (!queue.TryEnqueue(job))
             {
@@ -512,6 +569,7 @@ internal static class ArchiveEndpoints
     }
 
     private static async Task<IResult> DownloadAsync(
+        HttpContext http,
         string category,
         string id,
         HttpResponse response,
@@ -552,17 +610,19 @@ internal static class ArchiveEndpoints
         response.ContentType = "application/zip";
         response.Headers.ContentDisposition = $"attachment; filename=\"{item.Name.Replace("\\", "\\\\").Replace("\"", "\\\"")}.zip\"";
         await using var zipStream = response.BodyWriter.AsStream(leaveOpen: true);
-        await downloads.WriteFolderZipAsync(item, zipStream, cancellationToken);
+        await downloads.WriteFolderZipAsync(item, zipStream, cancellationToken, await ArchiveListingAccess.CanEnterAsync(http));
         return Results.Empty;
     }
 
     private static async Task<IResult> PrepareAudioTrackAsync(
+        HttpContext http,
         string category,
         string id,
         int index,
         IArchiveService archive,
         VideoMetadataCoordinator metadataCoordinator,
         AudioTrackRemuxService remuxService,
+        IFolderJobAuthorizer jobAuthorizer,
         CancellationToken cancellationToken)
     {
         if (!TryResolveMediaEntry(category, id, archive, out var entry) || entry is null ||
@@ -571,7 +631,9 @@ internal static class ArchiveEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new AudioTrackPrepareResponse(remuxService.Ensure(entry, index).ToString()));
+        var userId = ArchiveListingAccess.UserId(http);
+        return Results.Ok(new AudioTrackPrepareResponse(
+            remuxService.Ensure(entry, index, () => jobAuthorizer.CanReadAsync(userId, entry, CancellationToken.None)).ToString()));
     }
 
     private static async Task<IResult> StreamVideo(

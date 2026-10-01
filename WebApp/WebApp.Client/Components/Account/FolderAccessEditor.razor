@@ -1,0 +1,374 @@
+@implements IAsyncDisposable
+@inject AccountApiClient Accounts
+@inject IJSRuntime JS
+
+<section @ref="_root" class="d-flex flex-column gap-3" aria-labelledby="folder-access-title">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <button type="button" class="btn btn-outline-secondary" disabled="@_saving" @onclick="RequestBack">
+            <i class="bi bi-arrow-left me-2" aria-hidden="true"></i>Family members
+        </button>
+        <h2 id="folder-access-title" class="visually-hidden" tabindex="-1" @ref="_heading">Folder access for @User.DisplayName (@User.UserName)</h2>
+        <span class="me-auto"></span>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" disabled="@_saving" @onclick="RequestBack">Cancel</button>
+            <button type="button" class="btn btn-primary" disabled="@(_saving || _loading || !_state.HasUnsavedChanges)" @onclick="SaveAsync">
+                @if (_saving) { <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> }
+                Save access
+            </button>
+        </div>
+    </div>
+
+    @foreach (var error in _rejections)
+    {
+        <div class="alert alert-danger mb-0" role="alert">@error</div>
+    }
+    @if (_conflict)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mb-0" role="alert">
+            <span>This member's access changed since you opened it. Your edits are still here.</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ReloadAsync">
+                <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Reload
+            </button>
+        </div>
+    }
+    @if (_confirmDiscard)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mb-0" role="alert">
+            <span>Discard your unsaved changes?</span>
+            <span class="ms-auto d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-danger" @onclick="Discard">Discard changes</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _confirmDiscard = false">Keep editing</button>
+            </span>
+        </div>
+    }
+    @if (_ownerLabels.Count > 0)
+    {
+        <div class="alert alert-warning mb-0" role="alert">
+            <p class="mb-2"><strong>@User.UserName owns @string.Join(", ", _ownerLabels).</strong> An explicit deny on a folder they own overrides their ownership. Keep their owner access, or deny anyway?</p>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="KeepOwnerAccessAsync">Keep owner access</button>
+                <button type="button" class="btn btn-sm btn-danger" @onclick="DenyAnywayAsync">Deny anyway</button>
+            </div>
+        </div>
+    }
+    @if (_impact is not null)
+    {
+        <div class="alert alert-info mb-0" role="status">
+            <p class="mb-1"><strong>This change hides content.</strong>
+                @_impact.FolderCount folder@(_impact.FolderCount == 1 ? "" : "s") (@_impact.ItemCount item@(_impact.ItemCount == 1 ? "" : "s")) will no longer be visible to @string.Join(", ", _impact.AffectedUsers).</p>
+            <p class="mb-2 text-body-secondary">@string.Join(", ", _impact.FolderLabels)</p>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmImpactAsync">Save anyway</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _impact = null">Keep editing</button>
+            </div>
+        </div>
+    }
+    @if (_confirmReset is not null)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mb-0" role="alert">
+            <span>Reset @_state.Dto?.Folders.FirstOrDefault(folder => folder.FolderKey == _confirmReset)?.Label to inherited access?</span>
+            <span class="ms-auto d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-danger" @onclick="ConfirmReset">Reset</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _confirmReset = null">Cancel</button>
+            </span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="d-flex align-items-center gap-2 text-body-secondary">
+            <span class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading folder access</span></span>
+            Loading folders…
+        </div>
+    }
+    else if (_loadErrors.Count > 0)
+    {
+        @foreach (var error in _loadErrors)
+        {
+            <div class="alert alert-danger mb-0" role="alert">@error</div>
+        }
+    }
+    else if (_state.Dto is { Folders.Count: 0 })
+    {
+        <p class="text-body-secondary mb-0">There are no folders to manage yet.</p>
+    }
+    else if (_state.Dto is { } access)
+    {
+        <fieldset disabled="@_saving" class="m-0 p-0 border-0 min-w-0">
+            <div class="table-responsive overflow-y-auto" style="max-height:calc(100vh - 18rem)">
+                <table class="table table-sm align-middle mb-0">
+                    <caption class="visually-hidden">Folder access for @User.UserName</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col" class="position-sticky top-0 start-0 bg-body" style="z-index:3">Folder</th>
+                            @foreach (var operation in OperationsList(access))
+                            {
+                                <th scope="col" class="text-nowrap position-sticky top-0 bg-body" style="z-index:2">
+                                    @operation
+                                    <i class="bi bi-info-circle ms-1 text-body-secondary" role="img" tabindex="0"
+                                       data-bs-toggle="tooltip" data-bs-title="@Explanations[operation]"
+                                       aria-label="About @operation: @Explanations[operation]"></i>
+                                </th>
+                            }
+                            <th scope="col" class="text-end position-sticky top-0 bg-body" style="z-index:2"><span class="visually-hidden">Row actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var folder in _state.VisibleFolders())
+                        {
+                            var isPrivate = _state.IsPrivate(folder.FolderKey);
+                            <tr>
+                                <th scope="row" class="position-sticky start-0 bg-body fw-normal text-nowrap ps-@Math.Min(folder.Depth, 5)">
+                                    @if (_state.HasChildren(folder.FolderKey))
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm p-0 me-1 text-body" style="min-width:1.5rem"
+                                                aria-expanded="@(_state.IsExpanded(folder.FolderKey) ? "true" : "false")"
+                                                aria-label="@(_state.IsExpanded(folder.FolderKey) ? "Collapse" : "Expand") @folder.Label"
+                                                @onclick="() => _state.ToggleExpanded(folder.FolderKey)">
+                                            <i class="bi @(_state.IsExpanded(folder.FolderKey) ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="d-inline-block me-1" style="width:1.5rem"></span>
+                                    }
+                                    <i class="bi @(isPrivate ? "bi-lock-fill" : "bi-folder") me-1" aria-hidden="true"></i>
+                                    <span>@folder.Label</span>
+                                    @if (isPrivate) { <span class="visually-hidden"> (Private)</span> }
+                                    @if (folder.IsOwner) { <span class="badge text-bg-secondary ms-1">Owner</span> }
+                                </th>
+                                @foreach (var operation in OperationsList(access))
+                                {
+                                    @RenderCell(folder, operation)
+                                }
+                                <td class="text-end">
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-outline-secondary" style="min-width:2.5rem;min-height:2.5rem"
+                                                data-bs-toggle="dropdown" aria-expanded="false"
+                                                aria-label="Row actions for @folder.Label">
+                                            <i class="bi bi-three-dots" aria-hidden="true"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            @if (_state.HasChildren(folder.FolderKey))
+                                            {
+                                                @foreach (var operation in OperationsList(access).Where(op => _state.StateOf(folder.FolderKey, op) != AccessCellState.Unset))
+                                                {
+                                                    var captured = operation;
+                                                    <li><button type="button" class="dropdown-item" @onclick="() => _state.ApplyToSubfolders(folder.FolderKey, captured)">Apply @captured to subfolders</button></li>
+                                                }
+                                            }
+                                            @if (access.CanDelegate)
+                                            {
+                                                <li><button type="button" class="dropdown-item" @onclick="() => _state.SetPrivate(folder.FolderKey, !isPrivate)">@(isPrivate ? "Make Shared" : "Make Private")</button></li>
+                                            }
+                                            <li><button type="button" class="dropdown-item" @onclick="() => _confirmReset = folder.FolderKey">Reset to inherited…</button></li>
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </fieldset>
+    }
+</section>
+
+@code {
+    private static readonly FolderAccessOperation[] WithoutManage = [FolderAccessOperation.Read, FolderAccessOperation.Write, FolderAccessOperation.Create, FolderAccessOperation.Delete];
+    private static readonly FolderAccessOperation[] WithManage = [.. WithoutManage, FolderAccessOperation.Manage];
+
+    private static readonly Dictionary<FolderAccessOperation, string> Explanations = new()
+    {
+        [FolderAccessOperation.Read] = "See the folder and open, play or download what is in it. Every other permission also needs Read. Without it the folder appears not to exist.",
+        [FolderAccessOperation.Write] = "Change what is already there: rename items, edit text documents and set folder thumbnails.",
+        [FolderAccessOperation.Create] = "Add new things: create folders and files, upload, and save cuts, compositions, conversions and crops here.",
+        [FolderAccessOperation.Delete] = "Move items to Trash, or move them out of this folder.",
+        [FolderAccessOperation.Manage] = "Edit other members' access to this folder. It does not grant Read, Write, Create or Delete by itself."
+    };
+
+    [Parameter, EditorRequired] public AccountUserDto User { get; set; } = default!;
+
+    /// <summary>Back to the members list without saving.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Back to the members list after a successful save; carries the member's username.</summary>
+    [Parameter] public EventCallback<string> OnSaved { get; set; }
+
+    private readonly FolderAccessEditorState _state = new();
+    private ElementReference _root, _heading;
+    private IJSObjectReference? _module;
+    private bool _loading = true, _saving, _conflict, _confirmDiscard, _ownerAcknowledged, _focusHeading = true;
+    private string? _confirmReset;
+    private IReadOnlyList<string> _loadErrors = [], _rejections = [], _ownerLabels = [];
+    private FolderAccessImpactDto? _impact;
+
+    private IEnumerable<FolderAccessOperation> OperationsList(FolderAccessDto access) => access.CanDelegate ? WithManage : WithoutManage;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(rebase: false);
+
+    private async Task LoadAsync(bool rebase)
+    {
+        _loading = !rebase;
+        _loadErrors = [];
+        try
+        {
+            var (access, errors) = await Accounts.GetFolderAccessAsync(User.UserName);
+            if (access is null) { _loadErrors = errors; return; }
+            if (rebase) _state.Rebase(access); else _state.Load(access);
+        }
+        catch (HttpRequestException) { _loadErrors = ["Folder access could not be loaded. Try again."]; }
+        finally { _loading = false; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _conflict = false;
+        _rejections = [];
+        await LoadAsync(rebase: true);
+    }
+
+    private RenderFragment RenderCell(FolderAccessFolderDto folder, FolderAccessOperation operation) => __builder =>
+    {
+        var cell = _state.Cell(folder.FolderKey, operation);
+        if (cell is null) return;
+        var key = folder.FolderKey;
+        var state = _state.StateOf(key, operation);
+        var name = $"{operation} on {folder.Label} for {User.UserName}";
+        var allowed = _state.EffectiveOf(key, operation);
+        <td>
+            <button type="button" role="switch" aria-checked="@(allowed ? "true" : "false")"
+                    class="btn @(allowed ? "btn-outline-success" : "btn-outline-danger") d-inline-flex align-items-center justify-content-center"
+                    style="min-width:2.5rem;min-height:2.5rem" disabled="@cell.Locked"
+                    data-bs-toggle="tooltip" data-bs-title="@(allowed ? "Access" : "No access"): @(state == AccessCellState.Unset ? cell.Provenance : "Set explicitly")"
+                    aria-label="@name: @(allowed ? "access" : "no access")"
+                    @onclick="() => _state.ToggleAccess(key, operation)">
+                <i class="bi @(allowed ? "bi-unlock-fill" : "bi-lock-fill")" aria-hidden="true"></i>
+            </button>
+        </td>
+    };
+
+    private void RequestBack()
+    {
+        if (_state.HasUnsavedChanges) { _confirmDiscard = true; return; }
+        _ = OnClose.InvokeAsync();
+    }
+
+    private async Task Discard()
+    {
+        _state.Discard();
+        _confirmDiscard = false;
+        await OnClose.InvokeAsync();
+    }
+
+    private void ConfirmReset()
+    {
+        if (_confirmReset is not null) _state.ResetRow(_confirmReset);
+        _confirmReset = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _rejections = [];
+        _conflict = false;
+        _impact = null;
+        if (!_state.HasUnsavedChanges) return;
+
+        // An edit that denies the folder's owner needs an explicit decision before anything else happens.
+        if (!_ownerAcknowledged && _state.OwnerDenyLabels() is { Count: > 0 } owners)
+        {
+            _ownerLabels = owners;
+            return;
+        }
+
+        await PreviewThenSaveAsync();
+    }
+
+    private async Task KeepOwnerAccessAsync()
+    {
+        _state.KeepOwnerAccess();
+        _ownerLabels = [];
+        if (_state.HasUnsavedChanges) await PreviewThenSaveAsync();
+    }
+
+    private async Task DenyAnywayAsync()
+    {
+        _ownerAcknowledged = true;
+        _ownerLabels = [];
+        await PreviewThenSaveAsync();
+    }
+
+    private async Task PreviewThenSaveAsync()
+    {
+        var changes = _state.BuildChanges();
+        // Only edits that can hide content (a Read change or a mode change) need an impact preview.
+        if (changes.Any(change => change.Read is not null || change.IsPrivate is not null))
+        {
+            _saving = true;
+            try { _impact = await Accounts.PreviewFolderAccessAsync(User.UserName, changes); }
+            catch (HttpRequestException) { _impact = null; }
+            finally { _saving = false; }
+            if (_impact is { FolderCount: > 0 }) return;
+            _impact = null;
+        }
+
+        await PersistAsync(changes);
+    }
+
+    private async Task ConfirmImpactAsync()
+    {
+        _impact = null;
+        await PersistAsync(_state.BuildChanges());
+    }
+
+    private async Task PersistAsync(IReadOnlyList<FolderAccessChangeDto> changes)
+    {
+        _saving = true;
+        try
+        {
+            var outcome = await Accounts.SaveFolderAccessAsync(User.UserName, changes);
+            if (outcome.Succeeded)
+            {
+                _state.Discard();
+                await OnSaved.InvokeAsync(User.UserName);
+                return;
+            }
+
+            if (outcome.IsConflict) _conflict = true;
+            else _rejections = outcome.Errors;
+        }
+        catch (HttpRequestException) { _rejections = ["Folder access could not be saved. Try again."]; }
+        finally { _saving = false; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/bootstrapInterop.js");
+            await _module.InvokeVoidAsync("refreshTooltips", _root);
+            if (_focusHeading && !_loading)
+            {
+                _focusHeading = false;
+                await _heading.FocusAsync();
+            }
+        }
+        catch (JSException)
+        {
+            // Tooltips and focus are enhancements; every control stays operable without them.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("disposeTooltips", _root);
+            await _module.DisposeAsync();
+        }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+}

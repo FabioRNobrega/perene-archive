@@ -4,5 +4,6 @@ namespace WebApp.Services;
 
 internal interface IArchiveMetricsService
 {
-    DashboardArchiveDto GetArchiveMetrics();
+    /// <param name="canEnterFolder">When set, only files in directories it accepts are counted (a member's readable content).</param>
+    DashboardArchiveDto GetArchiveMetrics(Func<string, bool>? canEnterFolder = null);
 }

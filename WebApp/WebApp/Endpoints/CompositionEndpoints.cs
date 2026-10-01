@@ -1,3 +1,4 @@
+using WebApp.Authorization;
 using WebApp.Client.Models;
 using WebApp.Models;
 using WebApp.Services;
@@ -17,16 +18,20 @@ internal static class CompositionEndpoints
 
     public static IEndpointRouteBuilder MapCompositionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/api/compositions", CreateCompositionAsync);
-        endpoints.MapGet("/api/compositions/jobs", GetJobs);
+        var read = AccessRules.Root(FolderLocator.CompositionRootKey, FolderOperation.Read);
+        endpoints.MapPost("/api/compositions", CreateCompositionAsync).RequireFolderAccess(AccessRules.All(
+            AccessRules.Root(FolderLocator.CutRootKey, FolderOperation.Read),
+            AccessRules.Root(FolderLocator.CompositionRootKey, FolderOperation.Create)));
+        endpoints.MapGet("/api/compositions/jobs", GetJobs).RequireFolderAccess(read);
         endpoints.MapGet("/api/compositions", GetCurrentSnapshot);
-        endpoints.MapGet("/api/compositions/{id}/stream", StreamAsync);
-        endpoints.MapGet("/api/compositions/{id}/thumbnail", GetThumbnail);
-        endpoints.MapGet("/api/compositions/{id}/preview", GetPreview);
+        endpoints.MapGet("/api/compositions/{id}/stream", StreamAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/compositions/{id}/thumbnail", GetThumbnail).RequireFolderAccess(read);
+        endpoints.MapGet("/api/compositions/{id}/preview", GetPreview).RequireFolderAccess(read);
         return endpoints;
     }
 
     private static IResult CreateCompositionAsync(
+        HttpContext http,
         CreateCompositionRequest request,
         IVideoCutService cuts,
         ICompositionJobQueue queue,
@@ -55,7 +60,7 @@ internal static class CompositionEndpoints
         var jobId = Guid.NewGuid().ToString("N");
         statusStore.Seed(jobId);
 
-        if (!queue.TryEnqueue(new CompositionJob(jobId, ordered)))
+        if (!queue.TryEnqueue(new CompositionJob(jobId, ordered, ArchiveListingAccess.UserId(http))))
         {
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
@@ -72,6 +77,7 @@ internal static class CompositionEndpoints
     }
 
     private static async Task<IResult> GetCurrentSnapshot(
+        HttpContext http,
         IVideoCompositionService compositions,
         ThumbnailCoordinator thumbnailCoordinator,
         HoverPreviewCoordinator hoverPreviewCoordinator,
@@ -80,7 +86,7 @@ internal static class CompositionEndpoints
     {
         try
         {
-            var entries = await compositions.ScanAsync(cancellationToken);
+            var entries = await VideoEndpoints.FilterReadableAsync(http, await compositions.ScanAsync(cancellationToken));
             thumbnailCoordinator.Reconcile(entries);
             hoverPreviewCoordinator.Reconcile(entries);
             var items = await Task.WhenAll(entries.Select(entry =>

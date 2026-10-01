@@ -58,6 +58,8 @@ public static class AccountEndpoints
         adminApi.MapDelete("/{userName}", async (HttpContext context, UserManager<ApplicationUser> users, AccountLifecycleService lifecycle, string userName) =>
             ToResult(await lifecycle.DeleteAsync(users.GetUserId(context.User)!, userName)));
 
+        adminApi.MapAdminAccessEndpoints();
+
         accountApi.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> users) =>
             await users.GetUserAsync(context.User) is { } user
                 ? Results.Ok(new AccountMeDto(user.DisplayName, user.TwoFactorEnabled))

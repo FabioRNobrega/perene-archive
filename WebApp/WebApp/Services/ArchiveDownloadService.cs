@@ -5,14 +5,14 @@ namespace WebApp.Services;
 
 internal sealed class ArchiveDownloadService : IArchiveDownloadService
 {
-    public async Task WriteFolderZipAsync(ArchiveItemEntry folder, Stream destination, CancellationToken cancellationToken)
+    public async Task WriteFolderZipAsync(ArchiveItemEntry folder, Stream destination, CancellationToken cancellationToken, Func<string, bool>? canEnterFolder = null)
     {
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
         var parentPath = Path.GetDirectoryName(folder.PhysicalPath)!;
-        await AddDirectoryAsync(archive, folder.PhysicalPath, parentPath, cancellationToken);
+        await AddDirectoryAsync(archive, folder.PhysicalPath, parentPath, canEnterFolder, cancellationToken);
     }
 
-    private static async Task AddDirectoryAsync(ZipArchive archive, string directoryPath, string selectedParentPath, CancellationToken cancellationToken)
+    private static async Task AddDirectoryAsync(ZipArchive archive, string directoryPath, string selectedParentPath, Func<string, bool>? canEnterFolder, CancellationToken cancellationToken)
     {
         if (!TryGetAttributes(directoryPath, out var attributes) ||
             (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory ||
@@ -45,7 +45,8 @@ internal sealed class ArchiveDownloadService : IArchiveDownloadService
 
             if ((childAttributes & FileAttributes.Directory) != 0)
             {
-                await AddDirectoryAsync(archive, child, selectedParentPath, cancellationToken);
+                if (canEnterFolder is not null && !canEnterFolder(child)) continue;
+                await AddDirectoryAsync(archive, child, selectedParentPath, canEnterFolder, cancellationToken);
             }
             else
             {

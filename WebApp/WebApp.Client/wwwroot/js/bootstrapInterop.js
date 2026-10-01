@@ -32,6 +32,10 @@ export function disposeTooltips(root) {
     });
 }
 
+export function focusSelector(selector) {
+    document.querySelector(selector)?.focus();
+}
+
 export function clickElement(element) {
     element?.click();
 }

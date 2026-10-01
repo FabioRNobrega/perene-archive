@@ -29,7 +29,8 @@ internal sealed class AudioTrackRemuxService(
     public bool IsReady(VideoFileEntry entry, int trackIndex) =>
         cache.IsReady(cache.ComputeKey(entry, trackIndex));
 
-    public AudioTrackRemuxState Ensure(VideoFileEntry entry, int trackIndex)
+    /// <param name="authorizeAtExecution">Re-checks the requester's access right before the job runs; a false result skips the work.</param>
+    public AudioTrackRemuxState Ensure(VideoFileEntry entry, int trackIndex, Func<Task<bool>>? authorizeAtExecution = null)
     {
         var key = cache.ComputeKey(entry, trackIndex);
         if (cache.IsReady(key))
@@ -45,14 +46,14 @@ internal sealed class AudioTrackRemuxService(
         _ = _active.GetOrAdd(
             key,
             _ => new Lazy<Task>(
-                () => StartJob(key, entry, trackIndex),
+                () => StartJob(key, entry, trackIndex, authorizeAtExecution),
                 LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         return AudioTrackRemuxState.Pending;
     }
 
-    private Task StartJob(string key, VideoFileEntry entry, int trackIndex)
+    private Task StartJob(string key, VideoFileEntry entry, int trackIndex, Func<Task<bool>>? authorizeAtExecution)
     {
-        var job = Task.Run(() => RunAsync(key, entry, trackIndex));
+        var job = Task.Run(() => RunAsync(key, entry, trackIndex, authorizeAtExecution));
         _ = job.ContinueWith(completed =>
         {
             _active.TryRemove(key, out _);
@@ -65,7 +66,7 @@ internal sealed class AudioTrackRemuxService(
         return job;
     }
 
-    private async Task RunAsync(string key, VideoFileEntry entry, int trackIndex)
+    private async Task RunAsync(string key, VideoFileEntry entry, int trackIndex, Func<Task<bool>>? authorizeAtExecution)
     {
         var keyPrefix = key[..Math.Min(12, key.Length)];
         await _gate.WaitAsync();
@@ -73,6 +74,12 @@ internal sealed class AudioTrackRemuxService(
         {
             if (cache.IsReady(key))
             {
+                return;
+            }
+
+            if (authorizeAtExecution is not null && !await authorizeAtExecution())
+            {
+                logger.LogWarning("Audio track remux skipped for media {MediaId} track {Track}: the requester no longer has access.", entry.Id, trackIndex);
                 return;
             }
 
