@@ -52,16 +52,3 @@ public sealed class CustomStorageView
     public long MaxSizeBytes { get; set; }
     public DateTimeOffset CreatedUtc { get; set; }
 }
-
-/// <summary>The recorded outcome of one legacy-file import run; rows are never edited, only appended.</summary>
-public sealed class LegacyImportRun
-{
-    public long Id { get; set; }
-    public DateTimeOffset RanUtc { get; set; }
-    public required string RanByUserId { get; set; }
-    public required string BackupName { get; set; }
-    public bool BackupVerified { get; set; }
-    public int Imported { get; set; }
-    public int Skipped { get; set; }
-    public bool Verified { get; set; }
-}

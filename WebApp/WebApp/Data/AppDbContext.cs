@@ -21,7 +21,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ReaderTheme> ReaderThemes => Set<ReaderTheme>();
     public DbSet<ReaderThemePreference> ReaderThemePreferences => Set<ReaderThemePreference>();
     public DbSet<CustomStorageView> CustomStorageViews => Set<CustomStorageView>();
-    public DbSet<LegacyImportRun> LegacyImportRuns => Set<LegacyImportRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -175,10 +174,5 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne(view => view.User).WithMany().HasForeignKey(view => view.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        builder.Entity<LegacyImportRun>(entity =>
-        {
-            entity.HasKey(run => run.Id);
-            entity.Property(run => run.BackupName).HasMaxLength(256);
-        });
     }
 }

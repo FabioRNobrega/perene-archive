@@ -274,7 +274,6 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<MediaItemRepository>();
 builder.Services.AddScoped<MediaReconciliationService>();
 builder.Services.AddScoped<IUserMediaContext, UserMediaContext>();
-builder.Services.AddScoped<LegacyDataImporter>();
 builder.Services.AddSingleton<ITextDocumentService, TextDocumentService>();
 builder.Services.AddSingleton<ITextDocumentPdfExporter, TextDocumentPdfExporter>();
 
@@ -335,7 +334,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets().AllowAnonymous();
 app.MapAccountEndpoints();
-app.MapLegacyImportEndpoints();
+app.MapMediaAdminEndpoints();
 // One group filter validates the antiforgery token on every unsafe method of every API endpoint below.
 var protectedApi = app.MapGroup(string.Empty).AddEndpointFilter<AntiforgeryEndpointFilter>();
 protectedApi.MapVideoEndpoints();

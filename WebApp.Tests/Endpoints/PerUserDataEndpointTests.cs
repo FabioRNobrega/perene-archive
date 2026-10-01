@@ -14,20 +14,16 @@ namespace WebApp.Tests.Endpoints;
 public sealed class PerUserDataEndpointTests : IDisposable
 {
     private readonly MediaTestHost _host;
-    private readonly string _backups = Path.Combine(Path.GetTempPath(), $"endpoint-backups-{Guid.NewGuid():N}");
 
     public PerUserDataEndpointTests()
     {
-        Directory.CreateDirectory(_backups);
-        _host = new MediaTestHost(new Dictionary<string, string?> { ["Backup:Path"] = _backups });
-        Directory.CreateDirectory(_host.Factory.KeysPath);
+        _host = new MediaTestHost();
         EpubTestFixture.CreateMinimalEpub(Path.Combine(_host.BooksPath, "novel.epub"), "My Book", "My Author");
     }
 
     public void Dispose()
     {
         _host.Dispose();
-        if (Directory.Exists(_backups)) Directory.Delete(_backups, recursive: true);
     }
 
     private async Task<HttpClient> SignedInAsync(string user, bool admin = false)
@@ -56,7 +52,7 @@ public sealed class PerUserDataEndpointTests : IDisposable
         foreach (var path in new[]
         {
             "/api/archive/books/items/x/book/progress", "/api/archive/books/items/x/book/highlights", "/api/archive/books/items/x/comic/progress",
-            "/api/books/reader-themes", "/api/dashboard/storage/custom", "/api/admin/legacy-import"
+            "/api/books/reader-themes", "/api/dashboard/storage/custom"
         })
         {
             using var response = await anonymous.GetAsync(path);
@@ -129,46 +125,19 @@ public sealed class PerUserDataEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task The_import_and_reconcile_routes_are_admin_only_and_return_counts_only()
+    public async Task The_reconcile_route_is_admin_only_and_returns_counts_only()
     {
         using var anonymous = _host.Factory.CreateClient(NoRedirect);
         using var member = await SignedInAsync("alice");
         using var admin = await SignedInAsync("boss", admin: true);
 
-        using (var response = await anonymous.PostAsync("/api/admin/legacy-import", null)) Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(member, HttpMethod.Post, "/api/admin/legacy-import")).StatusCode);
+        using (var response = await anonymous.PostAsync("/api/admin/media/reconcile", null)) Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await SendAsync(member, HttpMethod.Post, "/api/admin/media/reconcile")).StatusCode);
-        using (var forbiddenRead = await member.GetAsync("/api/admin/legacy-import")) Assert.Equal(HttpStatusCode.Forbidden, forbiddenRead.StatusCode);
-        using (var noToken = await admin.PostAsync("/api/admin/legacy-import", null)) Assert.True(noToken.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden);
-
-        using (var none = await admin.GetAsync("/api/admin/legacy-import")) Assert.Equal(HttpStatusCode.NoContent, none.StatusCode);
-        using var run = await SendAsync(admin, HttpMethod.Post, "/api/admin/legacy-import");
-        Assert.Equal(HttpStatusCode.OK, run.StatusCode);
-        var body = await run.Content.ReadAsStringAsync();
-        Assert.DoesNotContain(_host.ArchivePath, body);
-        Assert.True((await run.Content.ReadFromJsonAsync<LegacyImportReportDto>())!.BackupVerified);
-        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/admin/legacy-import")).StatusCode);
+        using (var noToken = await admin.PostAsync("/api/admin/media/reconcile", null)) Assert.True(noToken.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden);
 
         using var reconcile = await SendAsync(admin, HttpMethod.Post, "/api/admin/media/reconcile");
         Assert.Equal(HttpStatusCode.OK, reconcile.StatusCode);
+        Assert.DoesNotContain(_host.ArchivePath, await reconcile.Content.ReadAsStringAsync());
         Assert.Equal(0, (await reconcile.Content.ReadFromJsonAsync<MediaReconcileReportDto>())!.MarkedMissing);
-    }
-
-    [Fact]
-    public async Task The_import_route_conflicts_when_the_backup_cannot_be_verified()
-    {
-        var blocker = Path.Combine(_backups, "blocker");
-        File.WriteAllText(blocker, "file");
-        using var blocked = new MediaTestHost(new Dictionary<string, string?> { ["Backup:Path"] = blocker });
-        Directory.CreateDirectory(blocked.Factory.KeysPath);
-        await CreateMemberAsync(blocked.Factory, "boss", "password1", admin: true);
-        using var admin = blocked.Factory.CreateClient(NoRedirect);
-        await SignInAsync(admin, "boss", "password1");
-
-        using var response = await SendAsync(admin, HttpMethod.Post, "/api/admin/legacy-import");
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.DoesNotContain(blocked.ArchivePath, await response.Content.ReadAsStringAsync());
-        await blocked.WithDbAsync(async (_, db) => Assert.Empty(await db.LegacyImportRuns.ToListAsync()));
     }
 }
