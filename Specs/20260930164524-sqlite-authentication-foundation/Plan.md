@@ -6,9 +6,9 @@ Add the P1 persistence and account-security foundation to the existing .NET 10 h
 
 ## Technical Approach
 
-`DatabaseOptions` follows existing option validators such as `ArchiveRootOptions`. `AppDbContext` uses EF Core SQLite and Identity EF stores, with migrations applied only by `Program.cs` during web-host startup. `ApplicationUser`, `ApplicationSignInManager`, and a focused `AccountLifecycleService` own account rules; the future folder-enforcement marker denies ordinary accounts until P2.
+`DatabaseOptions` follows existing option validators such as `ArchiveRootOptions`. `AppDbContext` uses EF Core SQLite and Identity EF stores, with migrations applied only by `Program.cs` during web-host startup. Startup seeds the default `admin` Administrator only when absent with `MustChangePassword` set. It never rewrites an existing account's password, authenticator state, recovery codes, roles, forced-password-change state, or other persisted state. `ApplicationUser`, `ApplicationSignInManager`, and a focused `AccountLifecycleService` own account rules. Administrators may create ordinary accounts in P1; P2 later adds folder-level authorization.
 
-Server-side account components live beneath `WebApp/WebApp/Components/Account/` and use static SSR via `ExcludeFromInteractiveRouting`; `App.razor` conditionally avoids the global WebAssembly render mode for those pages. The client continues to own `Routes.razor`, layout, and navigation, adding serialized authentication state and an antiforgery `DelegatingHandler` to its shared `HttpClient`.
+Server-side account components live beneath `WebApp/WebApp/Components/Account/` for static-SSR login, logout, forced password change, and TOTP sign-in. The client continues to own interactive authenticated account-management components, `Routes.razor`, layout, navigation, serialized authentication state, and its shared HTTP client.
 
 Unsafe APIs are protected by one route-group antiforgery filter. Static forms retain framework antiforgery protection; neither path disables antiforgery. Data Protection writes to the dedicated app-data volume. Offline command dispatch occurs before host construction and checks the schema rather than migrating.
 
@@ -50,13 +50,13 @@ Unsafe APIs are protected by one route-group antiforgery filter. Static forms re
 ```mermaid
 sequenceDiagram
   actor Operator
-  participant CLI as AdminCli
+  participant Host as Web host
   participant DB as AppDbContext/SQLite
   participant Page as Static SSR account page
   participant Identity as ApplicationSignInManager
   participant WASM as Client shell
-  Operator->>CLI: make admin-create USER=admin
-  CLI->>DB: verify schema, create Admin
+  Operator->>Host: start web host
+  Host->>DB: migrate and create default Admin only when absent
   Page->>Identity: login form + antiforgery token
   Identity->>DB: verify active/temporary-password state
   Identity-->>WASM: secure cookie and full navigation
@@ -65,7 +65,7 @@ sequenceDiagram
 
 ## Risks and Validation Focus
 
-- Migration and CLI concurrency: test schema mismatch refusal, WAL/busy behavior, and explicit migration-lock recovery.
+- Migration and seed concurrency: test safe default-Administrator initialization, WAL/busy behavior, and explicit migration-lock recovery.
 - Cookie-CSRF protection: test API and each static form independently, including stale and other-user tokens.
 - No-admin lockout: test all last-active-Admin guard paths and offline recovery.
-- P2 gate: prove that non-Admins remain unusable until folder enforcement exists.
+- Ordinary account lifecycle: prove that an Administrator can create an ordinary account which must change its temporary password before first sign-in.

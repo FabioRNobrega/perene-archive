@@ -253,18 +253,12 @@ using (var scope = app.Services.CreateScope())
             DisplayName = "Administrator",
             CreatedUtc = DateTimeOffset.UtcNow,
             IsActive = true,
-            MustChangePassword = false
+            MustChangePassword = true
         };
         var creation = await userManager.CreateAsync(defaultAdmin, "admin");
         if (!creation.Succeeded)
             throw new InvalidOperationException("Unable to create the configured initial administrator account.");
         await userManager.AddToRoleAsync(defaultAdmin, "Admin");
-    }
-    else if (existingDefaultAdmin.TwoFactorEnabled && await userManager.CheckPasswordAsync(existingDefaultAdmin, "admin"))
-    {
-        // Repair the original bootstrap account if it was enrolled before QR confirmation existed.
-        await userManager.SetTwoFactorEnabledAsync(existingDefaultAdmin, false);
-        await userManager.ResetAuthenticatorKeyAsync(existingDefaultAdmin);
     }
 }
 var configuredAllowedHosts = builder.Configuration["AllowedNetworkHosts:Hosts"]?

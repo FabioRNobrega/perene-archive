@@ -121,6 +121,22 @@ public sealed class AccountEndpointsTests
     }
 
     [Fact]
+    public async Task Default_admin_must_change_its_initial_password_before_using_authenticated_apis()
+    {
+        using var root = new TemporaryDirectory();
+        using var factory = new AccountFactory(root.Path);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        Assert.True((await FindUserAsync(factory, "admin"))!.MustChangePassword);
+
+        await SignInAsync(client, "admin", "admin");
+
+        Assert.False((await FindUserAsync(factory, "admin"))!.MustChangePassword);
+        using var users = await client.GetAsync("/api/account/users");
+        Assert.Equal(HttpStatusCode.OK, users.StatusCode);
+    }
+
+    [Fact]
     public async Task Disabling_the_authenticator_requires_the_current_password()
     {
         using var root = new TemporaryDirectory();
@@ -318,6 +334,19 @@ public sealed class AccountEndpointsTests
         }));
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.DoesNotContain("error=1", response.Headers.Location?.ToString());
+
+        if (response.Headers.Location?.ToString().Contains("step=change", StringComparison.Ordinal) is true)
+        {
+            using var changed = await PostLoginFormAsync(client, "/account/login/change-password", new()
+            {
+                ["username"] = username,
+                ["temporaryPassword"] = password,
+                ["newPassword"] = password + "-changed",
+                ["confirmPassword"] = password + "-changed"
+            });
+            Assert.Equal(HttpStatusCode.Redirect, changed.StatusCode);
+            Assert.DoesNotContain("error=1", changed.Headers.Location?.ToString());
+        }
     }
 
     private static async Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string path, T payload)
