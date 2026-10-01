@@ -23,7 +23,7 @@ internal static class ArchiveEndpoints
         endpoints.MapPut("/api/books/reader-themes/{themeId}", UpdateReaderThemeAsync);
         endpoints.MapDelete("/api/books/reader-themes/{themeId}", DeleteReaderThemeAsync);
         endpoints.MapGet("/api/archive/{category}/items", List);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync).RequireFolderAccess(read);
+        endpoints.MapPut("/api/archive/{category}/items/{id}/favorite", ToggleFavoriteAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
         endpoints.MapGet("/api/archive/{category}/items/{id}/playlist", GetPlaylist).RequireFolderAccess(read);
         endpoints.MapGet("/api/archive/{category}/items/{id}/stream", StreamVideo).RequireFolderAccess(read);
         endpoints.MapPost("/api/archive/{category}/items/{id}/audio-tracks/{index:int}", PrepareAudioTrackAsync).RequireFolderAccess(read);
@@ -33,8 +33,8 @@ internal static class ArchiveEndpoints
         endpoints.MapGet("/api/archive/{category}/items/{id}/image", GetImage).RequireFolderAccess(read);
         endpoints.MapGet("/api/archive/{category}/items/{id}/comic", GetComic).RequireFolderAccess(read);
         endpoints.MapGet("/api/archive/{category}/items/{id}/comic/pages/{index:int}", GetComicPage).RequireFolderAccess(read);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync).RequireFolderAccess(read);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/comic/progress", GetComicProgressAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
+        endpoints.MapPut("/api/archive/{category}/items/{id}/comic/progress", SaveComicProgressAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
         endpoints.MapGet("/api/archive/{category}/items/{id}/thumbnail", GetThumbnail).RequireFolderAccess(read);
         endpoints.MapPost("/api/archive/{category}/items/{id}/folder-thumbnail", UploadFolderThumbnailAsync).DisableAntiforgery().RequireFolderAccess(writeSelf);
         endpoints.MapDelete("/api/archive/{category}/items/{id}/folder-thumbnail", DeleteFolderThumbnail).RequireFolderAccess(writeSelf);
@@ -49,14 +49,14 @@ internal static class ArchiveEndpoints
         endpoints.MapPut("/api/archive/{category}/items/{id}/text", SaveTextDocument).RequireFolderAccess(AccessRules.ArchiveItem((FolderOperation.Write, ItemTarget.Container)));
         endpoints.MapPost("/api/archive/{category}/items/{id}/text/export-pdf", ExportTextDocumentPdf).RequireFolderAccess(readAndCreateBeside);
         endpoints.MapGet("/api/archive/{category}/items/{id}/pdf", GetPdfDocument).RequireFolderAccess(read);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book", GetBookAsync).RequireFolderAccess(read);
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book", GetBookAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/cover", GetBookCover).RequireFolderAccess(read);
         endpoints.MapGet("/api/archive/{category}/items/{id}/book/chapters/{chapterId}", GetBookChapter).RequireFolderAccess(read);
-        endpoints.MapPost("/api/archive/{category}/items/{id}/book/notes", SaveBookNoteAsync).RequireFolderAccess(read);
-        endpoints.MapDelete("/api/archive/{category}/items/{id}/book/notes/{noteId}", RemoveBookNoteAsync).RequireFolderAccess(read);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/highlights", GetBookHighlightsAsync).RequireFolderAccess(read);
-        endpoints.MapGet("/api/archive/{category}/items/{id}/book/progress", GetBookProgressAsync).RequireFolderAccess(read);
-        endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync).RequireFolderAccess(read);
+        endpoints.MapPost("/api/archive/{category}/items/{id}/book/notes", SaveBookNoteAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
+        endpoints.MapDelete("/api/archive/{category}/items/{id}/book/notes/{noteId}", RemoveBookNoteAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/highlights", GetBookHighlightsAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
+        endpoints.MapGet("/api/archive/{category}/items/{id}/book/progress", GetBookProgressAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
+        endpoints.MapPut("/api/archive/{category}/items/{id}/book/progress", SaveBookProgressAsync).RequireFolderAccess(read).AddEndpointFilter<ArchiveNotFoundEndpointFilter>();
         endpoints.MapPost("/api/archive/{category}/folders", CreateFolder).RequireFolderAccess(AccessRules.CreateInParent<CreateFolderRequest>(request => request.ParentId));
         endpoints.MapPost("/api/archive/{category}/files", CreateFile).RequireFolderAccess(AccessRules.CreateInParent<CreateFileRequest>(request => request.ParentId));
         endpoints.MapPost("/api/archive/{category}/uploads", CreateUploadSession).RequireFolderAccess(AccessRules.CreateInParent<ArchiveUploadCreateRequest>(request => request.ParentId));
@@ -784,7 +784,7 @@ internal static class ArchiveEndpoints
         if (!archive.TryResolveComic(category, id, out var item) || item is null) return Results.NotFound();
         try
         {
-            var progress = await progressService.LoadProgressAsync(category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+            var progress = await progressService.LoadProgressAsync(category, item.Id, cancellationToken);
             return Results.Text(System.Text.Json.JsonSerializer.Serialize(progress), "application/json");
         }
         catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
@@ -796,7 +796,7 @@ internal static class ArchiveEndpoints
         if (request.PageIndex < 0) return Results.BadRequest(new { error = "A valid page index is required to save progress." });
         try
         {
-            await progressService.SaveProgressAsync(category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, request, cancellationToken);
+            await progressService.SaveProgressAsync(category, item.Id, request, cancellationToken);
             return Results.Ok();
         }
         catch (OperationCanceledException) { return Results.StatusCode(StatusCodes.Status499ClientClosedRequest); }
@@ -1144,8 +1144,7 @@ internal static class ArchiveEndpoints
         BookProgressDto? progress;
         try
         {
-            progress = await progressService.LoadProgressAsync(
-                category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+            progress = await progressService.LoadProgressAsync(category, item.Id, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -1246,8 +1245,10 @@ internal static class ArchiveEndpoints
         try
         {
             await highlightService.SaveHighlightAsync(
-                item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, highlight, cancellationToken);
+                category, item.Id, highlight, cancellationToken);
             await noteService.AppendNoteAsync(
+                category,
+                item.Id,
                 highlight.Id,
                 book.Title,
                 book.Author,
@@ -1286,7 +1287,7 @@ internal static class ArchiveEndpoints
         }
 
         var highlights = await highlightService.LoadHighlightsAsync(
-            item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+            category, item.Id, cancellationToken);
         if (!highlights.Any(highlight => string.Equals(highlight.Id, noteId, StringComparison.Ordinal)))
         {
             return Results.NotFound();
@@ -1294,8 +1295,8 @@ internal static class ArchiveEndpoints
 
         try
         {
-            if (!await noteService.RemoveNoteAsync(noteId, cancellationToken) ||
-                !await highlightService.RemoveHighlightAsync(item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, noteId, cancellationToken))
+            if (!await noteService.RemoveNoteAsync(category, item.Id, noteId, cancellationToken) ||
+                !await highlightService.RemoveHighlightAsync(category, item.Id, noteId, cancellationToken))
             {
                 return Results.NotFound();
             }
@@ -1327,7 +1328,7 @@ internal static class ArchiveEndpoints
         try
         {
             var highlights = await highlightService.LoadHighlightsAsync(
-                item.Category.Key, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+                category, item.Id, cancellationToken);
             return Results.Ok(highlights);
         }
         catch (OperationCanceledException)
@@ -1350,8 +1351,7 @@ internal static class ArchiveEndpoints
 
         try
         {
-            var progress = await progressService.LoadProgressAsync(
-                category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, cancellationToken);
+            var progress = await progressService.LoadProgressAsync(category, item.Id, cancellationToken);
             // Results.Json/Ok write an empty body (rather than the JSON literal "null") when the value is null,
             // so serialize explicitly to keep this endpoint's response body always JSON-parseable.
             return Results.Text(System.Text.Json.JsonSerializer.Serialize(progress), "application/json");
@@ -1388,7 +1388,7 @@ internal static class ArchiveEndpoints
         try
         {
             await progressService.SaveProgressAsync(
-                category, item.Id, item.SizeBytes, item.LastWriteTimeUtc, request, cancellationToken);
+                category, item.Id, request, cancellationToken);
             return Results.Ok();
         }
         catch (OperationCanceledException)

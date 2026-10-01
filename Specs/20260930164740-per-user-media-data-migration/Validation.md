@@ -10,14 +10,14 @@
 ## Automated Tests
 
 - `MediaIdentityClassifierTests`, `MediaItemRepositoryTests`, and `MediaReconciliationServiceTests`.
-- `Sqlite*ServiceTests` for notes, highlights, progress, themes, favorites, and views.
+- `Sqlite*ServiceTests` for notes, highlights, progress, favorites, and views (per-user isolation) and for reader themes (shared library, creator-only edit/delete, duplicate names allowed, personal active settings, creator deletion).
 - `LegacyDataImporterTests` (including the Admin-only route, backup gate, and audit rows) and endpoint authorization regression tests (anonymous 401, unreadable 404, cross-user isolation) on the real-Identity host.
 - Run `make test`.
 
 ## Manual Verification
 
 1. Import representative legacy data after a verified backup and inspect report totals.
-2. Use two accounts on one EPUB and CBZ, including a note containing `==========`; confirm isolation.
+2. Use two accounts on one EPUB and CBZ, including a note containing `==========`; confirm isolation. Create a reader theme as one account and confirm the other can apply it, cannot edit or delete it, and keeps their own active settings.
 3. Rename and replace media externally, scan, and verify confirmed vs review behavior.
 
 ## Definition of Done

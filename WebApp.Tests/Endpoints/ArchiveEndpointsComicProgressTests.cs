@@ -27,9 +27,9 @@ public sealed class ArchiveEndpointsComicProgressTests
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync(url, new ComicProgressDto(1))).StatusCode);
         var saved = await client.GetFromJsonAsync<ComicProgressDto>(url);
         Assert.Equal(1, saved!.PageIndex);
-        var json = await File.ReadAllTextAsync(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveComicProgress.json"));
-        Assert.DoesNotContain(root.Path, json);
-        Assert.DoesNotContain("page-01.jpg", json);
+        // Progress now lives in the database; the legacy shared file is never written.
+        Assert.False(File.Exists(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveComicProgress.json")));
+        Assert.DoesNotContain(root.Path, await (await client.GetAsync(url)).Content.ReadAsStringAsync());
     }
 
     [Fact]

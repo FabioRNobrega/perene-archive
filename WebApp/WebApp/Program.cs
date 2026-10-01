@@ -236,7 +236,7 @@ builder.Services.AddSingleton<IVideoConversionGenerator, FfmpegVideoConversionGe
 builder.Services.AddHostedService<VideoConversionBackgroundWorker>();
 builder.Services.AddSingleton<IStorageUsageService, StorageUsageService>();
 builder.Services.AddSingleton<IArchiveService, ArchiveService>();
-builder.Services.AddSingleton<IArchiveFavoritesService, ArchiveFavoritesService>();
+builder.Services.AddScoped<IArchiveFavoritesService, SqliteArchiveFavoritesService>();
 builder.Services.AddSingleton<IArchiveMutationJobQueue, ArchiveMutationJobQueue>();
 builder.Services.AddSingleton<IArchiveMutationJobStatusStore, ArchiveMutationJobStatusStore>();
 builder.Services.AddSingleton<IArchiveMutationExecutor, ArchiveMutationExecutor>();
@@ -245,7 +245,7 @@ builder.Services.AddSingleton<IComicBookService, ComicBookService>();
 builder.Services.AddSingleton<IArchiveDownloadService, ArchiveDownloadService>();
 builder.Services.AddSingleton<IArchiveUploadService, ArchiveUploadService>();
 builder.Services.AddHostedService<ArchiveUploadCleanupWorker>();
-builder.Services.AddSingleton<ICustomStorageViewService, CustomStorageViewService>();
+builder.Services.AddScoped<ICustomStorageViewService, SqliteCustomStorageViewService>();
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
 builder.Services.AddSingleton<INetworkMetricsService, NetworkMetricsService>();
 builder.Services.AddSingleton<IActiveClientTracker, ActiveClientTracker>();
@@ -265,11 +265,16 @@ builder.Services.AddSingleton<IImageCropService, ImageCropService>();
 builder.Services.AddSingleton<IFolderThumbnailProcessor, FolderThumbnailProcessor>();
 builder.Services.AddSingleton<IEpubContentSanitizer, EpubContentSanitizer>();
 builder.Services.AddSingleton<IEpubBookService, EpubBookService>();
-builder.Services.AddSingleton<IEpubNoteService, EpubNoteService>();
-builder.Services.AddSingleton<IEpubProgressService, EpubProgressService>();
-builder.Services.AddSingleton<IEpubReaderThemeService, EpubReaderThemeService>();
-builder.Services.AddSingleton<IComicProgressService, ComicProgressService>();
-builder.Services.AddSingleton<IEpubHighlightService, EpubHighlightService>();
+builder.Services.AddScoped<IEpubNoteService, SqliteEpubNoteService>();
+builder.Services.AddScoped<IEpubProgressService, SqliteEpubProgressService>();
+builder.Services.AddScoped<IEpubReaderThemeService, SqliteReaderThemeService>();
+builder.Services.AddScoped<IComicProgressService, SqliteComicProgressService>();
+builder.Services.AddScoped<IEpubHighlightService, SqliteEpubHighlightService>();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<MediaItemRepository>();
+builder.Services.AddScoped<MediaReconciliationService>();
+builder.Services.AddScoped<IUserMediaContext, UserMediaContext>();
+builder.Services.AddScoped<LegacyDataImporter>();
 builder.Services.AddSingleton<ITextDocumentService, TextDocumentService>();
 builder.Services.AddSingleton<ITextDocumentPdfExporter, TextDocumentPdfExporter>();
 
@@ -330,6 +335,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets().AllowAnonymous();
 app.MapAccountEndpoints();
+app.MapLegacyImportEndpoints();
 // One group filter validates the antiforgery token on every unsafe method of every API endpoint below.
 var protectedApi = app.MapGroup(string.Empty).AddEndpointFilter<AntiforgeryEndpointFilter>();
 protectedApi.MapVideoEndpoints();

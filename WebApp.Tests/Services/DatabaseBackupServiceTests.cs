@@ -42,7 +42,7 @@ public sealed class DatabaseBackupServiceTests : IDisposable
         Assert.Equal(["keys", "perene.db"], Directory.GetFileSystemEntries(result.Directory).Select(Path.GetFileName).Order().ToArray());
         Assert.Equal(2, result.KeyFileCount);
         Assert.Equal(2, Directory.GetFiles(result.KeysDirectory).Length);
-        Assert.EndsWith("AddFolderAccessControl", result.MigrationId);
+        Assert.EndsWith("SharePreviouslyPersonalReaderThemes", result.MigrationId);
         await using var restored = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={result.DatabaseFile};Pooling=False").Options);
         Assert.Equal("Kept", (await restored.Users.SingleAsync()).DisplayName);
     }

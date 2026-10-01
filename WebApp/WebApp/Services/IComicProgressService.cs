@@ -4,9 +4,7 @@ namespace WebApp.Services;
 
 internal interface IComicProgressService
 {
-    Task<ComicProgressDto?> LoadProgressAsync(
-        string categoryKey, string itemId, long? sizeBytes, DateTime lastWriteTimeUtc, CancellationToken cancellationToken);
+    Task<ComicProgressDto?> LoadProgressAsync(string categoryKey, string itemId, CancellationToken cancellationToken);
 
-    Task SaveProgressAsync(
-        string categoryKey, string itemId, long? sizeBytes, DateTime lastWriteTimeUtc, ComicProgressDto progress, CancellationToken cancellationToken);
+    Task SaveProgressAsync(string categoryKey, string itemId, ComicProgressDto progress, CancellationToken cancellationToken);
 }

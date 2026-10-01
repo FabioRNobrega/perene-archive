@@ -29,6 +29,14 @@ Extend P1's EF Core model and P2's `IFolderAccessService` with media identity an
 
 - [EF Core SQLite limitations](https://learn.microsoft.com/ef/core/providers/sqlite/limitations) informs reviewed migrations and real-file tests for SQLite-specific partial indexes.
 
+## Implementation Notes
+
+- Reader themes are shared: `ReaderTheme.CreatedByUserId` records the creator (set to null when the creator is deleted), `SqliteReaderThemeService` lists all themes for everyone, edits and deletes only the creator's own, and `ReaderThemePreference` keeps each user's active settings and selection. A follow-up migration (`SharePreviouslyPersonalReaderThemes`) renames the owner column and relaxes its foreign key; existing personal themes simply become visible to everyone.
+
+- Reconciliation runs lazily when an item is first used by a per-user service (find or create the Active row, classify a same-path change) and on demand through the Admin `POST /api/admin/media/reconcile` scan (fingerprint relink, ambiguous duplicates to review, vanished files to Missing, reappearing Missing files reclassified). The Admin review queue (reattach / keep archived) is not part of this spec; `NeedsReview` and `Superseded` rows keep their data hidden until a later spec adds it.
+- The importer's backup gate is the same verified backup `make db-backup` produces (`Backup:Path`, default `/backups`); no verified backup means no import. The legacy services are removed from DI in the same change; their files are only ever opened for reading by the importer.
+- Notes keep the original Kindle-style fields as columns (`BookTitle`, `BookAuthor`, `ChapterIndex`, offsets) next to the arbitrary multiline `Content`; a note shares its key with its highlight.
+
 ## Flow
 
 ```mermaid

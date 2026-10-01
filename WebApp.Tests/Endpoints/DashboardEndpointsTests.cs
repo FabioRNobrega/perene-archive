@@ -63,7 +63,7 @@ public sealed class DashboardEndpointsTests
             "/api/dashboard/storage/custom", new AddCustomStorageViewRequest("videos", "not-a-real-id", false, 1024));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(File.Exists(Path.Combine(root.Path, "Dashboard", "pereneArchiveCustomStorageViews.json")));
+        Assert.Empty((await client.GetFromJsonAsync<List<CustomStorageViewDto>>("/api/dashboard/storage/custom"))!);
     }
 
     [Fact]

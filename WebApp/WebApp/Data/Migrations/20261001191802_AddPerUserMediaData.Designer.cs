@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using WebApp.Data;
 
@@ -10,9 +11,11 @@ using WebApp.Data;
 namespace WebApp.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261001191802_AddPerUserMediaData")]
+    partial class AddPerUserMediaData
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -607,9 +610,6 @@ namespace WebApp.Data.Migrations
                     b.Property<int>("ContentPaddingPercent")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset>("CreatedUtc")
                         .HasColumnType("TEXT");
 
@@ -638,12 +638,15 @@ namespace WebApp.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Id");
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT");
 
-                    b.HasIndex("CreatedByUserId");
+                    b.HasKey("Id");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
+
+                    b.HasIndex("UserId", "Name");
 
                     b.ToTable("ReaderThemes");
                 });
@@ -1051,12 +1054,12 @@ namespace WebApp.Data.Migrations
 
             modelBuilder.Entity("WebApp.Data.Entities.ReaderTheme", b =>
                 {
-                    b.HasOne("WebApp.Identity.ApplicationUser", "CreatedBy")
+                    b.HasOne("WebApp.Identity.ApplicationUser", "User")
                         .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
-                    b.Navigation("CreatedBy");
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("WebApp.Data.Entities.ReaderThemePreference", b =>

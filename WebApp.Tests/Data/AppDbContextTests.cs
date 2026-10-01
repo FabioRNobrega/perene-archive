@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using WebApp.Data;
 using WebApp.Data.Entities;
 using WebApp.Identity;
@@ -148,6 +149,27 @@ public sealed class AppDbContextTests : IDisposable
         db.AccessPolicies.Add(new AccessPolicy { Id = 2 });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Existing_personal_reader_themes_become_shared_when_the_owner_column_is_renamed()
+    {
+        await using var db = CreateContext();
+        var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("20261001191802_AddPerUserMediaData");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO AspNetUsers (Id, UserName, DisplayName, CreatedUtc, IsActive, MustChangePassword, AuthzVersion, AccessFailedCount, EmailConfirmed, LockoutEnabled, PhoneNumberConfirmed, TwoFactorEnabled) VALUES ('u1', 'u1', 'U', '2026-01-01', 1, 0, 0, 0, 0, 0, 0, 0)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO ReaderThemes (PublicId, UserId, Name, FontFamily, FontSizePx, LineHeight, ContentPaddingPercent, CreatedUtc) VALUES ('t1', 'u1', 'Night', 'Arial', 20, 1.4, 5, '2026-01-01')");
+
+        await db.Database.MigrateAsync();
+
+        var theme = await db.ReaderThemes.AsNoTracking().SingleAsync();
+        Assert.Equal("u1", theme.CreatedByUserId);
+        Assert.Equal("Night", theme.Name);
+        db.Users.Remove(await db.Users.SingleAsync(user => user.Id == "u1"));
+        await db.SaveChangesAsync();
+        Assert.Null((await db.ReaderThemes.AsNoTracking().SingleAsync()).CreatedByUserId);
     }
 
     [Fact]

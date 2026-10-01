@@ -12,6 +12,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Folder> Folders => Set<Folder>();
     public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
     public DbSet<AccessPolicy> AccessPolicies => Set<AccessPolicy>();
+    public DbSet<MediaItem> MediaItems => Set<MediaItem>();
+    public DbSet<BookNote> BookNotes => Set<BookNote>();
+    public DbSet<BookHighlight> BookHighlights => Set<BookHighlight>();
+    public DbSet<ReadingProgress> ReadingProgresses => Set<ReadingProgress>();
+    public DbSet<ComicProgress> ComicProgresses => Set<ComicProgress>();
+    public DbSet<Favorite> Favorites => Set<Favorite>();
+    public DbSet<ReaderTheme> ReaderThemes => Set<ReaderTheme>();
+    public DbSet<ReaderThemePreference> ReaderThemePreferences => Set<ReaderThemePreference>();
+    public DbSet<CustomStorageView> CustomStorageViews => Set<CustomStorageView>();
+    public DbSet<LegacyImportRun> LegacyImportRuns => Set<LegacyImportRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -61,6 +71,114 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasKey(policy => policy.Id);
             entity.Property(policy => policy.Id).ValueGeneratedNever();
             entity.ToTable(table => table.HasCheckConstraint("CK_AccessPolicies_Singleton", "\"Id\" = 1"));
+        });
+        ConfigureMedia(builder);
+    }
+
+    private static void ConfigureMedia(ModelBuilder builder)
+    {
+        builder.Entity<MediaItem>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Category).HasMaxLength(16);
+            entity.Property(item => item.RelativePath).HasMaxLength(2048);
+            entity.Property(item => item.ContentFingerprint).HasMaxLength(128);
+            entity.Property(item => item.IdentityKey).HasMaxLength(128);
+            entity.Property(item => item.Status).HasConversion<string>().HasMaxLength(16);
+            // Only Active rows occupy a path; Missing, NeedsReview and Superseded keep their last-known path for review.
+            entity.HasIndex(item => new { item.FolderId, item.RelativePath }).IsUnique().HasFilter("\"Status\" = 'Active'");
+            entity.HasIndex(item => item.ContentFingerprint);
+            entity.HasIndex(item => item.Status);
+            entity.HasOne(item => item.Folder).WithMany().HasForeignKey(item => item.FolderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.SupersededBy).WithMany().HasForeignKey(item => item.SupersededByMediaItemId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<BookNote>(entity =>
+        {
+            entity.HasKey(note => note.Id);
+            entity.Property(note => note.NoteKey).HasMaxLength(64);
+            entity.Property(note => note.BookTitle).HasMaxLength(512);
+            entity.Property(note => note.BookAuthor).HasMaxLength(512);
+            entity.HasIndex(note => new { note.UserId, note.NoteKey }).IsUnique();
+            entity.HasIndex(note => new { note.UserId, note.MediaItemId });
+            entity.HasOne(note => note.User).WithMany().HasForeignKey(note => note.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(note => note.MediaItem).WithMany().HasForeignKey(note => note.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<BookHighlight>(entity =>
+        {
+            entity.HasKey(highlight => highlight.Id);
+            entity.Property(highlight => highlight.HighlightKey).HasMaxLength(64);
+            entity.Property(highlight => highlight.ChapterId).HasMaxLength(256);
+            entity.HasIndex(highlight => new { highlight.UserId, highlight.HighlightKey }).IsUnique();
+            entity.HasIndex(highlight => new { highlight.UserId, highlight.MediaItemId });
+            entity.HasOne(highlight => highlight.User).WithMany().HasForeignKey(highlight => highlight.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(highlight => highlight.MediaItem).WithMany().HasForeignKey(highlight => highlight.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReadingProgress>(entity =>
+        {
+            entity.HasKey(progress => progress.Id);
+            entity.Property(progress => progress.ChapterId).HasMaxLength(256);
+            entity.HasIndex(progress => new { progress.UserId, progress.MediaItemId }).IsUnique();
+            entity.HasOne(progress => progress.User).WithMany().HasForeignKey(progress => progress.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(progress => progress.MediaItem).WithMany().HasForeignKey(progress => progress.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ComicProgress>(entity =>
+        {
+            entity.HasKey(progress => progress.Id);
+            entity.HasIndex(progress => new { progress.UserId, progress.MediaItemId }).IsUnique();
+            entity.HasOne(progress => progress.User).WithMany().HasForeignKey(progress => progress.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(progress => progress.MediaItem).WithMany().HasForeignKey(progress => progress.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Favorite>(entity =>
+        {
+            entity.HasKey(favorite => favorite.Id);
+            entity.HasIndex(favorite => new { favorite.UserId, favorite.MediaItemId }).IsUnique();
+            entity.HasOne(favorite => favorite.User).WithMany().HasForeignKey(favorite => favorite.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(favorite => favorite.MediaItem).WithMany().HasForeignKey(favorite => favorite.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReaderTheme>(entity =>
+        {
+            entity.HasKey(theme => theme.Id);
+            entity.Property(theme => theme.PublicId).HasMaxLength(64);
+            entity.Property(theme => theme.Name).HasMaxLength(64);
+            entity.Property(theme => theme.FontFamily).HasMaxLength(64);
+            entity.Property(theme => theme.ForegroundColor).HasMaxLength(7);
+            entity.Property(theme => theme.BackgroundColor).HasMaxLength(7);
+            entity.HasIndex(theme => theme.PublicId).IsUnique();
+            entity.HasIndex(theme => theme.CreatedByUserId);
+            entity.HasOne(theme => theme.CreatedBy).WithMany().HasForeignKey(theme => theme.CreatedByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ReaderThemePreference>(entity =>
+        {
+            entity.HasKey(preference => preference.UserId);
+            entity.Property(preference => preference.FontFamily).HasMaxLength(64);
+            entity.Property(preference => preference.ForegroundColor).HasMaxLength(7);
+            entity.Property(preference => preference.BackgroundColor).HasMaxLength(7);
+            entity.Property(preference => preference.SelectedThemePublicId).HasMaxLength(64);
+            entity.HasOne(preference => preference.User).WithMany().HasForeignKey(preference => preference.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CustomStorageView>(entity =>
+        {
+            entity.HasKey(view => view.Id);
+            entity.Property(view => view.PublicId).HasMaxLength(64);
+            entity.Property(view => view.CategoryKey).HasMaxLength(64);
+            entity.Property(view => view.FolderId).HasMaxLength(128);
+            entity.Property(view => view.Title).HasMaxLength(256);
+            entity.HasIndex(view => view.PublicId).IsUnique();
+            entity.HasOne(view => view.User).WithMany().HasForeignKey(view => view.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<LegacyImportRun>(entity =>
+        {
+            entity.HasKey(run => run.Id);
+            entity.Property(run => run.BackupName).HasMaxLength(256);
         });
     }
 }

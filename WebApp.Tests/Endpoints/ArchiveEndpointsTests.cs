@@ -1052,11 +1052,8 @@ public sealed class ArchiveEndpointsTests
             new BookNoteRequest("0", selectedText, start, start + selectedText.Length));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var notesPath = Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt");
-        var content = await File.ReadAllTextAsync(notesPath);
-        Assert.Contains("My Book (My Author)", content);
-        Assert.Contains(selectedText, content);
-        Assert.Contains("==========", content);
+        // The note is stored per user in the database; the legacy shared notes file is no longer written.
+        Assert.False(File.Exists(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookNotes.txt")));
 
         using var emptySelection = await client.PostAsJsonAsync(
             $"/api/archive/books/items/{book.Id}/book/notes",
@@ -1078,12 +1075,11 @@ public sealed class ArchiveEndpointsTests
         var highlight = Assert.Single(highlights!);
         Assert.Equal(selectedText, highlight.SelectedText);
         Assert.Equal(start, highlight.TextOffsetStart);
-        Assert.True(File.Exists(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookHighlights.json")));
+        Assert.False(File.Exists(Path.Combine(root.Path, "Books", "Notes", "pereneArchiveBookHighlights.json")));
 
         using var removed = await client.DeleteAsync(
             $"/api/archive/books/items/{book.Id}/book/notes/{highlight.Id}");
         Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
-        Assert.DoesNotContain(selectedText, await File.ReadAllTextAsync(notesPath));
         Assert.Empty((await client.GetFromJsonAsync<List<BookHighlightDto>>(
             $"/api/archive/books/items/{book.Id}/book/highlights"))!);
     }

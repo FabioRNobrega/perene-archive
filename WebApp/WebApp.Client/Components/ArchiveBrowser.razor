@@ -2297,9 +2297,7 @@
             using var response = await action();
             if (!response.IsSuccessStatusCode)
             {
-                _error = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                    ? "That change conflicts with an existing item."
-                    : "The archive change could not be saved.";
+                _error = ArchiveMutationMessages.For(response.StatusCode);
                 return;
             }
 
@@ -2425,9 +2423,7 @@
             using var response = await action();
             if (!response.IsSuccessStatusCode)
             {
-                _error = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                    ? "That change conflicts with an existing item."
-                    : "The archive change could not be saved.";
+                _error = ArchiveMutationMessages.For(response.StatusCode);
                 return null;
             }
 

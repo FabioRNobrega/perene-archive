@@ -126,7 +126,7 @@
                         <label class="visually-hidden" for="epub-reader-theme-name">Theme name</label>
                         <div class="input-group input-group-sm"><input id="epub-reader-theme-name" class="form-control" placeholder="Theme name" @bind="_themeName" maxlength="60" disabled="@_isThemeBusy" /><button class="btn btn-secondary" type="button" disabled="@_isThemeBusy" @onclick="SaveNewThemeAsync">Save new</button></div>
                     </div>
-                    @if (_themeLibrary?.SelectedThemeId is not null)
+                    @if (_themeLibrary?.Themes.FirstOrDefault(theme => theme.Id == _themeLibrary.SelectedThemeId)?.CanEdit == true)
                     {
                         <div class="d-flex flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" type="button" disabled="@_isThemeBusy" @onclick="UpdateThemeAsync">Update</button><button class="btn btn-outline-secondary btn-sm" type="button" disabled="@_isThemeBusy" @onclick="RenameThemeAsync">Rename</button><button class="btn btn-outline-danger btn-sm" type="button" disabled="@_isThemeBusy" @onclick="DeleteThemeAsync">Delete</button></div>
                     }
