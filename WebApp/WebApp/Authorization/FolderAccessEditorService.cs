@@ -11,7 +11,7 @@ namespace WebApp.Authorization;
 /// <summary>Builds the access editor's view of one member (folder tree, explicit and effective cells, provenance, stamps) and previews the impact of pending edits.</summary>
 internal sealed class FolderAccessEditorService(
     AppDbContext db,
-    FolderAccessService access,
+    IFolderAccessService access,
     FolderCatalog catalog,
     FolderLocator locator,
     UserManager<ApplicationUser> users)

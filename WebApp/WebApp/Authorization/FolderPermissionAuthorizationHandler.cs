@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization.Infrastructure;
 namespace WebApp.Authorization;
 
 /// <summary>The single resource-based handler for every folder operation (<see cref="FolderOperations"/>).</summary>
-public sealed class FolderPermissionAuthorizationHandler(FolderAccessService access)
+public sealed class FolderPermissionAuthorizationHandler(IFolderAccessService access)
     : AuthorizationHandler<OperationAuthorizationRequirement, FolderOperationContext>
 {
     protected override async Task HandleRequirementAsync(
@@ -28,7 +28,7 @@ public enum AccessDecision { Allowed, NotFound, Forbidden }
 /// Maps handler outcomes to the endpoint matrix: unreadable is <see cref="AccessDecision.NotFound"/> (404, never revealing the
 /// folder), readable but forbidden is <see cref="AccessDecision.Forbidden"/> (403). Anonymous callers are rejected earlier (401).
 /// </summary>
-public sealed class FolderAuthorizer(IAuthorizationService authorization, FolderAccessService access)
+public sealed class FolderAuthorizer(IAuthorizationService authorization, IFolderAccessService access)
 {
     public async Task<AccessDecision> AuthorizeAsync(ClaimsPrincipal user, FolderOperation operation, FolderLocation location)
     {

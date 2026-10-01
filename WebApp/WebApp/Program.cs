@@ -91,7 +91,7 @@ builder.Services.AddSingleton<JobOwnerRegistry>();
 builder.Services.AddSingleton<IFolderJobAuthorizer, FolderJobAuthorizer>();
 builder.Services.AddSingleton<IFolderPathSync, FolderPathSync>();
 builder.Services.AddScoped<AuthzVersionStore>();
-builder.Services.AddScoped<FolderAccessService>();
+builder.Services.AddScoped<IFolderAccessService, FolderAccessService>();
 builder.Services.AddScoped<FolderAuthorizer>();
 builder.Services.AddScoped<IAuthorizationHandler, FolderPermissionAuthorizationHandler>();
 builder.Services.AddScoped<FolderCatalog>();

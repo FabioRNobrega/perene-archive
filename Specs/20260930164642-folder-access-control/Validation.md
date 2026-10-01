@@ -13,7 +13,7 @@
 
 - Client tests for `FolderAccessEditor` state: Allow/Deny/unset round-trip to DTOs, only changed cells are submitted, unsaved-edit guard, and the members-list action's visibility rules.
 
-- `FolderPermissionResolverTests`, `FolderAccessServiceTests`, `DelegationRulesTests`, and `PermissionWriteServiceTests`.
+- `FolderPermissionResolverTests`, `FolderAccessServiceTests`, `DelegationRulesTests`, and `PermissionWriteServiceTests` (all under `WebApp.Tests/Authorization/`, alongside `EndpointAuthorizationMatrixTests`, `PathLeakTests`, and `FolderAccessEndpointTests`).
 - `EndpointAuthorizationMatrixTests`, `AdminAccessEndpointsTests` (routes addressed by `userName`), and `PathLeakTests` with a real-Identity `WebApplicationFactory` that can sign in as a seeded member (not only the fake Admin).
 - Migration/cascade tests in `AppDbContextTests`; execution re-authorization tests in worker/job tests.
 - Run `make test`.

@@ -44,7 +44,7 @@ public sealed class FolderAccessServiceTests : IDisposable
     {
         var aliceId = await MemberIdAsync("alice");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var books = FolderLocation.Create("books", "");
 
         Assert.Null(await access.GetActorAsync(null));
@@ -65,7 +65,7 @@ public sealed class FolderAccessServiceTests : IDisposable
     {
         var bossId = await MemberIdAsync("boss", admin: true);
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         await AddFolderAsync(scope, "Hidden", FolderAccessMode.Private);
 
         Assert.True((await access.GetActorAsync(bossId))!.IsAdmin);
@@ -78,7 +78,7 @@ public sealed class FolderAccessServiceTests : IDisposable
     {
         var aliceId = await MemberIdAsync("alice");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var books = FolderLocation.Create("books", "");
 
         Assert.True(await access.CheckAsync(aliceId, FolderOperation.Read, books));
@@ -98,7 +98,7 @@ public sealed class FolderAccessServiceTests : IDisposable
     {
         var aliceId = await MemberIdAsync("alice");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var hidden = await AddFolderAsync(scope, "Hidden", FolderAccessMode.Private);
 
         var readable = (await access.GetReadableAsync(aliceId))!;
@@ -118,7 +118,7 @@ public sealed class FolderAccessServiceTests : IDisposable
     {
         var aliceId = await MemberIdAsync("alice");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var versions = scope.ServiceProvider.GetRequiredService<AuthzVersionStore>();
 
         var first = await access.GetReadableAsync(aliceId);
@@ -140,7 +140,7 @@ public sealed class FolderAccessServiceTests : IDisposable
         var aliceId = await MemberIdAsync("alice");
         var bobId = await MemberIdAsync("bob");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var versions = scope.ServiceProvider.GetRequiredService<AuthzVersionStore>();
 
         var alice = await access.GetReadableAsync(aliceId);

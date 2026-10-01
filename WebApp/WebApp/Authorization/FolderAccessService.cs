@@ -12,7 +12,7 @@ public sealed record AccessActor(string UserId, bool IsAdmin, long AuthzVersion)
 /// (global policy version, user <see cref="ApplicationUser.AuthzVersion"/>); destructive, rename/move/replace, permission,
 /// Admin, and job-execution checks always re-evaluate against the user's rows in the database.
 /// </summary>
-public sealed class FolderAccessService(AppDbContext db, AccessCaches caches)
+public sealed class FolderAccessService(AppDbContext db, AccessCaches caches) : IFolderAccessService
 {
     /// <summary>The active account with its Admin membership read from the database, or null for an unknown/deactivated account.</summary>
     public async Task<AccessActor?> GetActorAsync(string? userId, CancellationToken cancellationToken = default)

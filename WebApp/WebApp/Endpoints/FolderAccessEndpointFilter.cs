@@ -18,7 +18,7 @@ internal sealed class FolderAccessEndpointFilter(AccessRule rule) : IEndpointFil
     {
         var services = context.HttpContext.RequestServices;
         var user = context.HttpContext.User;
-        var access = services.GetRequiredService<FolderAccessService>();
+        var access = services.GetRequiredService<IFolderAccessService>();
         var actor = await access.GetActorAsync(FolderAuthorizer.UserIdOf(user), context.HttpContext.RequestAborted);
         if (actor is null) return Results.Unauthorized();
         if (actor.IsAdmin) return await next(context);

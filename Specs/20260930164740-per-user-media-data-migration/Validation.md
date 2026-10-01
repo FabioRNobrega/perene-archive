@@ -11,7 +11,7 @@
 
 - `MediaIdentityClassifierTests`, `MediaItemRepositoryTests`, and `MediaReconciliationServiceTests`.
 - `Sqlite*ServiceTests` for notes, highlights, progress, themes, favorites, and views.
-- `LegacyDataImporterTests` and endpoint authorization regression tests.
+- `LegacyDataImporterTests` (including the Admin-only route, backup gate, and audit rows) and endpoint authorization regression tests (anonymous 401, unreadable 404, cross-user isolation) on the real-Identity host.
 - Run `make test`.
 
 ## Manual Verification

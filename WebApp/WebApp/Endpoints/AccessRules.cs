@@ -170,7 +170,7 @@ internal static class AccessRules
 
     private static async Task<List<AccessRequirement>> SubtreeReadsAsync(HttpContext http, FolderLocation folder)
     {
-        var tree = await http.RequestServices.GetRequiredService<FolderAccessService>().GetTreeAsync(http.RequestAborted);
+        var tree = await http.RequestServices.GetRequiredService<IFolderAccessService>().GetTreeAsync(http.RequestAborted);
         return tree.All
             .Where(row => row.Location != folder && row.Location.IsWithin(folder))
             .Select(row => new AccessRequirement(FolderOperation.Read, row.Location, ForbidWhenUnreadable: true))

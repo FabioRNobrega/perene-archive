@@ -6,7 +6,7 @@ Extend P1's `AppDbContext` and Identity foundation (per-user `AuthzVersion`, exi
 
 ## Technical Approach
 
-`FolderRepository` owns EF access to folders and permissions. `FolderPermissionResolver` is pure and table-tested; `FolderPermissionAuthorizationHandler` invokes it through ASP.NET Core resource-based authorization. `FolderAccessService` owns cache freshness and readable-set queries keyed by the pair (global policy version on `ACCESS_POLICY`, user `AuthzVersion`). Endpoint filters keep `VideoEndpoints`, `ArchiveEndpoints`, `CutEndpoints`, and `CompositionEndpoints` free from repeated authorization code.
+`FolderRepository` owns EF access to folders and permissions. `FolderPermissionResolver` is pure and table-tested; `FolderPermissionAuthorizationHandler` invokes it through ASP.NET Core resource-based authorization. `FolderAccessService` (behind `IFolderAccessService`) owns cache freshness and readable-set queries keyed by the pair (global policy version on `ACCESS_POLICY`, user `AuthzVersion`); `CheckAsync` is the fresh, uncached path used for non-Read operations and job execution. Endpoint filters keep `VideoEndpoints`, `ArchiveEndpoints`, `CutEndpoints`, and `CompositionEndpoints` free from repeated authorization code.
 
 `ArchiveService`, `VideoLibraryService`, `VideoCutService`, and `VideoCompositionService` retain snapshot IDs but expose only server-side item/folder mapping. Job workers call fresh authorization both at enqueue and execution. `PermissionWriteService` owns delegation and concurrency checks. The client adds Admin pages/DTOs only; UI state is never relied upon for enforcement.
 
@@ -27,7 +27,7 @@ Extend P1's `AppDbContext` and Identity foundation (per-user `AuthzVersion`, exi
 **New files to create:**
 
 - `WebApp/WebApp/Data/Entities/{Folder,FolderPermission,AccessPolicy}.cs` and focused configurations/repositories.
-- `WebApp/WebApp/Authorization/{FolderOperations,FolderOperationContext,FolderPermissionResolver,FolderPermissionAuthorizationHandler,FolderAccessService,PermissionWriteService,DelegationRules,AuthzVersionStore}.cs`.
+- `WebApp/WebApp/Authorization/{IFolderAccessService,FolderOperations,FolderOperationContext,FolderPermissionResolver,FolderPermissionAuthorizationHandler,FolderAccessService,PermissionWriteService,DelegationRules,AuthzVersionStore}.cs`.
 - `WebApp/WebApp/Endpoints/AdminAccessEndpoints.cs` (mapped onto the existing Admin group; no separate `AdminUserEndpoints`).
 - `WebApp.Tests/Support/` member-capable test host helper that seeds real users and signs in as a member (P1's `TestHostSecurity` signs in a fake `test-admin` that is not a database row and bypasses every deny; build on `IdentityTestHost`/`AccountFactory`).
 - `WebApp/WebApp.Client/Components/Account/FolderAccessEditor.razor` (plus small row/cell components if needed) and access DTOs under `Models/`, addressed by `UserName`. Layout, cell semantics, and states follow Requirements "UI Design"; Bootstrap components first, scoped CSS only for sticky first column / indentation if utilities cannot express it. No `Routes.razor`, `MainLayout.razor`, or `Sidebar.razor` changes.

@@ -148,7 +148,7 @@ public sealed class FolderAccessEndpointTests : IDisposable
         var mine = await db.Folders.SingleAsync(folder => folder.RootKey == "books" && folder.RelativePath == "Mine");
         Assert.Equal(aliceId, mine.OwnerUserId);
 
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var location = new FolderLocation("books", "Mine");
         Assert.True(await access.CheckAsync(aliceId, FolderOperation.Write, location));
         Assert.True(await access.CheckAsync(aliceId, FolderOperation.Delete, location));
@@ -292,7 +292,7 @@ public sealed class FolderAccessEndpointTests : IDisposable
         using var admin = await SignedInAsync("boss", admin: true);
         await CreateMemberAsync(_factory, "alice", "password1");
         using var scope = _factory.Services.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         var versions = scope.ServiceProvider.GetRequiredService<AuthzVersionStore>();
         var aliceId = (await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByNameAsync("alice"))!.Id;
 

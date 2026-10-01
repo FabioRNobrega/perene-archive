@@ -22,7 +22,7 @@ public sealed record PermissionWriteResult(PermissionWriteOutcome Outcome, IRead
 /// </summary>
 internal sealed class PermissionWriteService(
     AppDbContext db,
-    FolderAccessService access,
+    IFolderAccessService access,
     AuthzVersionStore versions,
     UserManager<ApplicationUser> users)
 {

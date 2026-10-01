@@ -70,7 +70,7 @@ internal sealed class FolderJobAuthorizer(IServiceScopeFactory scopes, FolderLoc
     {
         if (actorUserId is null) return true;
         using var scope = scopes.CreateScope();
-        var access = scope.ServiceProvider.GetRequiredService<FolderAccessService>();
+        var access = scope.ServiceProvider.GetRequiredService<IFolderAccessService>();
         foreach (var (operation, location) in requirements)
         {
             if (location is null || !await access.CheckAsync(actorUserId, operation, location, cancellationToken)) return false;

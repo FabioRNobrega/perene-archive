@@ -42,5 +42,5 @@ internal static class ArchiveListingAccess
     public static string? UserId(HttpContext http) => http.User.FindFirstValue(ClaimTypes.NameIdentifier);
 
     public static async Task<bool> IsAdminAsync(HttpContext http) =>
-        (await http.RequestServices.GetRequiredService<FolderAccessService>().GetActorAsync(UserId(http), http.RequestAborted))?.IsAdmin == true;
+        (await http.RequestServices.GetRequiredService<IFolderAccessService>().GetActorAsync(UserId(http), http.RequestAborted))?.IsAdmin == true;
 }
