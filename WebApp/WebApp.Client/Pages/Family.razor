@@ -22,7 +22,7 @@
         }
         else if (_tab == Tab.Users && _isAdmin)
         {
-            <section><div class="d-flex align-items-center justify-content-between gap-3 mb-3"><div><h2 class="h5 card-title mb-1">Family Members</h2><p class="text-body-secondary mb-0">Accounts with access to PereneArchive.</p></div><div class="d-flex align-items-center gap-3"><span class="badge text-bg-secondary">@(_users?.Count ?? 0) total</span><button class="btn btn-primary" aria-expanded="@(_adding ? "true" : "false")" @onclick="() => _adding = !_adding"><i class="bi bi-person-plus me-2" aria-hidden="true"></i>Add member</button></div></div>@if (_adding) { <AddMemberPanel OnCreated="ReloadUsersAsync" OnClose="() => _adding = false" /> }@if (_users is null) { <p class="text-body-secondary">Loading family members…</p> } else { <div class="table-responsive"><table class="table align-middle"><thead><tr><th>User</th><th>Display name</th><th>Role</th><th>Status</th><th>Authenticator</th></tr></thead><tbody>@foreach (var user in _users) { <tr><td class="fw-semibold">@user.UserName</td><td>@user.DisplayName</td><td>@(user.IsAdmin ? "Administrator" : "Member")</td><td><span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@(user.IsActive ? "Active" : "Inactive")</span></td><td>@(user.TwoFactorEnabled ? "Enabled" : "Not enabled")</td></tr> }</tbody></table></div>}</section>
+            <section><div class="d-flex align-items-center justify-content-between gap-3 mb-3"><div><h2 class="h5 card-title mb-1">Family Members</h2><p class="text-body-secondary mb-0">Accounts with access to PereneArchive.</p></div><div class="d-flex align-items-center gap-3"><span class="badge text-bg-secondary">@(_users?.Count ?? 0) total</span><button class="btn btn-primary" aria-expanded="@(_adding ? "true" : "false")" @onclick="() => _adding = !_adding"><i class="bi bi-person-plus me-2" aria-hidden="true"></i>Add member</button></div></div>@if (_adding) { <AddMemberPanel OnCreated="ReloadUsersAsync" OnClose="() => _adding = false" /> }@if (_users is null) { <p class="text-body-secondary">Loading family members…</p> } else { <MembersTable Users="_users" CurrentUserName="_currentUserName" OnChanged="ReloadUsersAsync" /> }</section>
         }
         else
         {
@@ -32,20 +32,29 @@
 </section>
 
 @code {
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabName { get; set; }
     private enum Tab { Personal, Users, Security }
     private Tab _tab;
     private IReadOnlyList<AccountUserDto>? _users;
     private string _displayName = "";
     private bool _editing, _isAdmin, _adding;
+    private string? _currentUserName;
     private string? _message, _error;
     protected override async Task OnInitializedAsync()
     {
         try { _displayName = (await Accounts.GetMeAsync()).DisplayName; } catch (HttpRequestException) { _error = "Your profile could not be loaded."; }
-        _isAdmin = (await AuthState.GetAuthenticationStateAsync()).User.IsInRole("Admin");
+        var principal = (await AuthState.GetAuthenticationStateAsync()).User;
+        _isAdmin = principal.IsInRole("Admin");
+        _currentUserName = principal.Identity?.Name;
         if (_isAdmin) _users = await Accounts.GetUsersAsync();
+        OnParametersSet();
+    }
+    protected override void OnParametersSet()
+    {
+        if (TabName == "members" && _isAdmin) _tab = Tab.Users;
     }
     private async Task ReloadUsersAsync() => _users = await Accounts.GetUsersAsync();
-    private async Task SaveAsync() => await RunAsync(async () => { await Accounts.PostAsync("api/account/preferences", new AccountPreferencesDto(_displayName)); _editing = false; _message = "Profile name saved."; });
+    private async Task SaveAsync() => await RunAsync(async () => { await Accounts.PostAsync("api/account/preferences", new AccountPreferencesDto(_displayName)); _editing = false; _message = "Profile name saved."; Accounts.SetDisplayName(_displayName.Trim()); });
     private async Task LogoutAsync() { await RunAsync(() => Accounts.PostAsync("api/account/logout", new { })); Navigation.NavigateTo("/account/login", true); }
     private async Task RunAsync(Func<Task> operation) { _error = _message = null; try { await operation(); } catch (HttpRequestException) { _error = "The request could not be completed. Check your details and try again."; } }
 }

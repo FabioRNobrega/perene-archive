@@ -29,17 +29,16 @@
             {
                 <p class="text-uppercase small text-brand-gold fw-semibold mb-1">Private archive</p>
                 <h1 class="h2 card-title">@(ShowTotp ? "Verify your sign-in" : "Welcome back")</h1>
-                <p class="text-body-secondary mb-4">@(ShowTotp ? "Enter the current code from your authenticator app." : "Sign in to continue to your archive.")</p>
-                @if (HasError) { <div class="alert alert-danger" role="alert">We could not sign you in. Check your details and try again.</div> }
+                <p class="text-body-secondary mb-4">@(ShowTotp ? "Enter the current code from your authenticator app, or one of your recovery codes." : "Sign in to continue to your archive.")</p>
+                @if (HasError) { <div class="alert alert-danger" role="alert">@(Reason == "expired" ? "Your temporary password has expired. Ask an administrator to reset it." : "We could not sign you in. Check your details and try again.")</div> }
                 <form method="post" action="/account/login">
                     @Token
                     <input type="hidden" name="returnUrl" value="@ReturnUrl" />
                     <input type="hidden" name="useTwoFactor" value="@ShowTotp.ToString().ToLowerInvariant()" />
                     @if (ShowTotp)
                     {
-                        <input type="hidden" name="username" value="@Username" />
-                        <label class="form-label" for="authenticatorCode">Authenticator code</label>
-                        <input id="authenticatorCode" class="form-control mb-3" name="authenticatorCode" inputmode="numeric" autocomplete="one-time-code" autofocus required />
+                        <label class="form-label" for="authenticatorCode">Authenticator or recovery code</label>
+                        <input id="authenticatorCode" class="form-control mb-3" name="authenticatorCode" autocomplete="one-time-code" autofocus required />
                     }
                     else
                     {

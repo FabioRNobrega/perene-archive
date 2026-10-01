@@ -87,6 +87,7 @@ public sealed class KestrelHttpsRedirectionTests
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            TestHostSecurity.Apply(builder);
             builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {

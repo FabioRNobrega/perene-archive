@@ -13,7 +13,7 @@ DOCKER_HOST := $(shell \
 	fi)
 export DOCKER_HOST
 
-.PHONY: help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert archive-group archive-share admin-create admin-recover db-backup
+.PHONY: backup-dir help docker-env docker-build docker-run docker-run-bg docker-down docker-reset docker-logs docker-ps docker-shell docker-exec dotnet dotnet-new test docker-test docker-test-shell get-url get-url-nas https-cert archive-group archive-share admin-recover db-backup db-unlock-migration
 
 help:
 	@printf '%s\n' \
@@ -29,7 +29,9 @@ help:
 		'make docker-exec               Open the running web container shell' \
 		'make dotnet ARGS="build"       Run any dotnet command in Docker' \
 		'make test                      Run tests in an isolated stack' \
-		'make admin-create USER=<name>   Create the first Admin (after the web host migrated the database)' \
+		'make admin-recover USER=<name>  Offline: reset an account to a one-time temporary password (never migrates)' \
+		'make db-backup                 Verified online SQLite backup + Data Protection keys into ./backups' \
+		'make db-unlock-migration CONFIRM=yes  Clear a stale EF migration lock (refuses while activity is detected)' \
 		'make archive-group             Create or verify the host perenearchive group' \
 		'make archive-share USER=name [PERENE_ARCHIVE_ROOT=/path]  Grant an existing account archive-group access' \
 		'make get-url                   Show the URL to access the app from other LAN devices' \
@@ -48,10 +50,14 @@ dotnet-new: docker-build
 	$(COMPOSE) -p $(COMPOSE_PROJECT) run --rm --no-deps webapp dotnet sln PereneArchive.slnx add WebApp/WebApp/WebApp.csproj WebApp/WebApp.Client/WebApp.Client.csproj WebApp.Tests/WebApp.Tests.csproj
 	$(COMPOSE) -p $(COMPOSE_PROJECT) run --rm --no-deps webapp dotnet add WebApp.Tests/WebApp.Tests.csproj reference WebApp/WebApp/WebApp.csproj
 
-docker-run:
+# Podman will not create a missing bind-mount source, so make sure the backup folder exists first.
+backup-dir:
+	@mkdir -p $${PERENE_BACKUP_DIR:-./backups}
+
+docker-run: backup-dir
 	$(COMPOSE) -p $(COMPOSE_PROJECT) up --build
 
-docker-run-bg:
+docker-run-bg: backup-dir
 	$(COMPOSE) -p $(COMPOSE_PROJECT) up --build --detach
 
 docker-down:
@@ -86,14 +92,25 @@ docker-test:
 docker-test-shell:
 	$(COMPOSE) -p $(TEST_COMPOSE_PROJECT) -f docker-compose.test.yml run --rm --build tests bash
 
-admin-create:
-	@echo 'Admin CLI is enabled after the Identity migration is applied; use the Admin account page for lifecycle operations.' >&2; exit 2
+# Offline operator commands: they run in a throwaway container beside the web host, share only the appdata
+# volume, never start the host, and never migrate or seed the database.
+ADMIN_CLI = $(COMPOSE) -p $(COMPOSE_PROJECT) run --rm --no-deps -T webapp sh -lc 'dotnet restore WebApp/WebApp/WebApp.csproj -v q && dotnet build WebApp/WebApp/WebApp.csproj --no-restore --nologo -v q && dotnet run --project WebApp/WebApp/WebApp.csproj --no-build --no-launch-profile -- "$$@"' sh
 
 admin-recover:
-	@echo 'Admin recovery CLI is not available until the account lifecycle command is implemented.' >&2; exit 2
+ifneq ($(origin USER),command line)
+	@echo 'Usage: make admin-recover USER=<name>' >&2; exit 2
+endif
+	$(ADMIN_CLI) admin-recover '$(USER)'
 
-db-backup:
-	@echo 'Verified database backup is not available until the backup service is implemented.' >&2; exit 2
+db-backup: backup-dir
+	$(ADMIN_CLI) db-backup /backups
+	@echo 'Backups are stored in $${PERENE_BACKUP_DIR:-./backups} on the host (database copy + keys).'
+
+db-unlock-migration:
+ifneq ($(CONFIRM),yes)
+	@echo 'Refusing to clear the migration lock. Re-run with CONFIRM=yes only after confirming no migration is running.' >&2; exit 2
+endif
+	$(ADMIN_CLI) db-unlock-migration --confirm
 
 https-cert:
 	@mkdir -p https

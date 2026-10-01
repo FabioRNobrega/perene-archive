@@ -20,6 +20,8 @@ services:
         read_only: false
       - thumbnail_cache:/previews
       - appdata:/appdata
+      # Verified database backups (`make db-backup`) land here on the host; never the live volume.
+      - ${PERENE_BACKUP_DIR:-./backups}:/backups
       - ./:/workspace
       - /workspace/WebApp/WebApp/bin
       - /workspace/WebApp/WebApp/obj

@@ -105,6 +105,7 @@ public sealed class ArchiveEndpointsCropTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            TestHostSecurity.Apply(builder);
             builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {

@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using WebApp.Client.Pages;
 using WebApp.Components;
@@ -7,7 +6,14 @@ using WebApp.Configuration;
 using WebApp.Data;
 using WebApp.Endpoints;
 using WebApp.Identity;
+using WebApp.Security;
 using WebApp.Services;
+
+// Offline operator commands run before any host exists: they never migrate, seed, or listen.
+if (AdminCli.IsCommand(args))
+{
+    return await AdminCli.RunAsync(args);
+}
 
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
@@ -17,13 +23,30 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents()
     .AddAuthenticationStateSerialization();
+var databaseOptions = builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
 builder.Services.AddOptions<DatabaseOptions>()
     .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
-    .Validate(DatabaseOptions.IsValid, "Database:Path must be an absolute path in an existing writable directory.")
+    .Validate(DatabaseOptions.IsValid, "Database:Path must be an absolute path to a file in an existing writable directory.")
+    .Validate(
+        options => DatabaseOptions.IsDisjointFromRoots(options,
+        [
+            builder.Configuration[$"{ArchiveRootOptions.SectionName}:Path"],
+            builder.Configuration[$"{VideoLibraryOptions.SectionName}:Path"],
+            builder.Configuration[$"{ThumbnailCacheOptions.SectionName}:Path"],
+            builder.Configuration[$"{VideoCutOptions.SectionName}:Path"],
+            builder.Configuration[$"{VideoCompositionOptions.SectionName}:Path"]
+        ]),
+        "Database:Path must not be inside the archive, cache, or output directories.")
     .ValidateOnStart();
-var databasePath = builder.Configuration.GetValue<string>("Database:Path") ?? "/appdata/perene.db";
+builder.Services.AddOptions<AuthOptions>()
+    .Bind(builder.Configuration.GetSection(AuthOptions.SectionName))
+    .Validate(AuthOptions.HasPositiveTemporaryPasswordDays, "Auth:TemporaryPasswordDays must be greater than zero.")
+    .Validate(AuthOptions.HasPositiveValidationInterval, "Auth:SecurityStampValidationMinutes must be greater than zero.")
+    .ValidateOnStart();
+var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite($"Data Source={databasePath};Foreign Keys=True;Default Timeout=5"));
+    options.UseSqlite($"Data Source={databaseOptions.Path};Foreign Keys=True;Default Timeout=5")
+        .AddInterceptors(new SqliteConnectionInterceptor()));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies();
@@ -31,8 +54,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
         options.User.RequireUniqueEmail = false;
         options.SignIn.RequireConfirmedAccount = false;
-        // The local bootstrap account is explicitly requested as admin/admin. Operators should
-        // change it immediately through the authenticated change-password page.
+        // The local bootstrap account is explicitly requested as admin/admin and must change it at first sign-in.
         options.Password.RequiredLength = 5;
         options.Password.RequireDigit = false;
         options.Password.RequireLowercase = false;
@@ -50,15 +72,18 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.LoginPath = "/account/login";
     options.SlidingExpiration = true;
+    // Unauthenticated API calls get a plain 401/403 instead of a redirect to the login page.
+    options.Events.OnRedirectToLogin = context => RedirectOrStatus(context, StatusCodes.Status401Unauthorized);
+    options.Events.OnRedirectToAccessDenied = context => RedirectOrStatus(context, StatusCodes.Status403Forbidden);
 });
-builder.Services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(1));
+builder.Services.Configure<SecurityStampValidatorOptions>(options =>
+    options.ValidationInterval = TimeSpan.FromMinutes(authOptions.SecurityStampValidationMinutes));
 builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
     .RequireAuthenticatedUser().Build());
-builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
+builder.Services.AddAntiforgery(options => options.HeaderName = AntiforgeryEndpointFilter.HeaderName);
 builder.Services.AddScoped<ApplicationSignInManager>();
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo("/appdata/keys"))
-    .SetApplicationName("PereneArchive");
+builder.Services.AddScoped<AccountLifecycleService>();
+builder.Services.AddPereneDataProtection(builder.Configuration);
 builder.Services.AddOptions<VideoLibraryOptions>()
     .Bind(builder.Configuration.GetSection(VideoLibraryOptions.SectionName))
     .Validate(VideoLibraryOptions.HasConfiguredPath, "VideoLibrary:Path is required.")
@@ -235,32 +260,7 @@ builder.Services.AddSingleton<ITextDocumentService, TextDocumentService>();
 builder.Services.AddSingleton<ITextDocumentPdfExporter, TextDocumentPdfExporter>();
 
 var app = builder.Build();
-Directory.CreateDirectory("/appdata/keys");
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    if (!await roleManager.RoleExistsAsync("Admin"))
-        await roleManager.CreateAsync(new IdentityRole("Admin"));
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-    var existingDefaultAdmin = await userManager.FindByNameAsync("admin");
-    if (existingDefaultAdmin is null)
-    {
-        var defaultAdmin = new ApplicationUser
-        {
-            UserName = "admin",
-            DisplayName = "Administrator",
-            CreatedUtc = DateTimeOffset.UtcNow,
-            IsActive = true,
-            MustChangePassword = true
-        };
-        var creation = await userManager.CreateAsync(defaultAdmin, "admin");
-        if (!creation.Succeeded)
-            throw new InvalidOperationException("Unable to create the configured initial administrator account.");
-        await userManager.AddToRoleAsync(defaultAdmin, "Admin");
-    }
-}
+await StartupInitializer.InitializeAsync(app.Services);
 var configuredAllowedHosts = builder.Configuration["AllowedNetworkHosts:Hosts"]?
     .Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [];
 var allowedHostSet = new HashSet<string>(configuredAllowedHosts, StringComparer.OrdinalIgnoreCase)
@@ -310,22 +310,39 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 app.MapStaticAssets().AllowAnonymous();
 app.MapAccountEndpoints();
-app.MapVideoEndpoints();
-app.MapCutEndpoints();
-app.MapCompositionEndpoints();
-app.MapStorageEndpoints();
-app.MapArchiveEndpoints();
-app.MapDashboardEndpoints();
+// One group filter validates the antiforgery token on every unsafe method of every API endpoint below.
+var protectedApi = app.MapGroup(string.Empty).AddEndpointFilter<AntiforgeryEndpointFilter>();
+protectedApi.MapVideoEndpoints();
+protectedApi.MapCutEndpoints();
+protectedApi.MapCompositionEndpoints();
+protectedApi.MapStorageEndpoints();
+protectedApi.MapArchiveEndpoints();
+protectedApi.MapDashboardEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(WebApp.Client._Imports).Assembly);
 
 app.Run();
+return 0;
+
+static Task RedirectOrStatus(Microsoft.AspNetCore.Authentication.RedirectContext<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions> context, int status)
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = status;
+    }
+    else
+    {
+        context.Response.Redirect(context.RedirectUri);
+    }
+
+    return Task.CompletedTask;
+}
 
 public partial class Program;

@@ -68,3 +68,6 @@ logs/
 # =========================
 .DS_Store
 Thumbs.db
+
+# Verified database backups written by `make db-backup`
+backups/

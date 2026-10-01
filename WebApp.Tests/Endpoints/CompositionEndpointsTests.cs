@@ -99,6 +99,7 @@ public sealed class CompositionEndpointsTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            TestHostSecurity.Apply(builder);
             var previewPath = Path.Combine(Path.GetTempPath(), $"video-manager-composition-api-preview-{Guid.NewGuid():N}");
             Directory.CreateDirectory(previewPath);
 

@@ -1,0 +1,54 @@
+@inject AccountApiClient Accounts
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<AuthorizeView>
+    <Authorized>
+        <div class="d-flex align-items-center justify-content-between gap-2" role="group" aria-label="Signed-in user">
+            <span class="d-flex align-items-center gap-2 text-truncate">
+                <i class="bi bi-person-circle fs-5" aria-hidden="true"></i>
+                <span class="text-truncate">
+                    <span class="d-block small fw-semibold text-truncate">@(Accounts.DisplayName ?? context.User.Identity?.Name)</span>
+                    <AuthorizeView Roles="Admin" Context="adminContext"><span class="badge text-bg-secondary">Administrator</span></AuthorizeView>
+                </span>
+            </span>
+            <span class="d-flex gap-1 flex-shrink-0">
+                <AuthorizeView Roles="Admin" Context="adminContext">
+                    <a class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+                       style="min-width:2.5rem;min-height:2.5rem"
+                       href="family?tab=members" title="Manage members" aria-label="Manage members"><i class="bi bi-people" aria-hidden="true"></i></a>
+                </AuthorizeView>
+                <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+                        style="min-width:2.5rem;min-height:2.5rem"
+                        title="Sign out" aria-label="Sign out" disabled="@_busy" @onclick="SignOutAsync"><i class="bi bi-box-arrow-right" aria-hidden="true"></i></button>
+            </span>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Accounts.DisplayNameChanged += OnDisplayNameChanged;
+        try { await Accounts.GetMeAsync(); }
+        catch (HttpRequestException) { /* the username stays as the fallback label */ }
+    }
+
+    private void OnDisplayNameChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Accounts.DisplayNameChanged -= OnDisplayNameChanged;
+
+    private async Task SignOutAsync()
+    {
+        _busy = true;
+        try { await Accounts.PostAsync("api/account/logout", new { }); Navigation.NavigateTo("/account/login", forceLoad: true); }
+        catch (HttpRequestException)
+        {
+            // The static sign-out page performs the same sign-out with its own form token.
+            Navigation.NavigateTo("/account/logout", forceLoad: true);
+        }
+        finally { _busy = false; }
+    }
+}

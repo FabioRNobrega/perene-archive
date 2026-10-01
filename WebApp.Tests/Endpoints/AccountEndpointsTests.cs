@@ -8,6 +8,7 @@ using WebApp.Identity;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using static WebApp.Tests.IdentityTestHost;
 
 namespace WebApp.Tests.Endpoints;
 
@@ -43,7 +44,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         var html = await client.GetStringAsync("/account/login");
         var hrefs = System.Text.RegularExpressions.Regex
@@ -84,7 +85,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         using var me = await client.GetAsync("/api/account/me");
 
@@ -97,7 +98,7 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "member", "member-pass");
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
         await SignInAsync(client, "member", "member-pass");
 
         var me = await client.GetFromJsonAsync<AccountMeDto>("/api/account/me");
@@ -112,7 +113,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
         await SignInAsync(client, "admin", "admin");
 
         using var users = await client.GetAsync("/api/account/users");
@@ -125,7 +126,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         Assert.True((await FindUserAsync(factory, "admin"))!.MustChangePassword);
 
@@ -142,7 +143,7 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "member", "member-pass", twoFactor: false);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
         await SignInAsync(client, "member", "member-pass");
         await SetTwoFactorAsync(factory, "member", enabled: true);
 
@@ -163,7 +164,7 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "member", "member-pass");
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
         await SignInAsync(client, "member", "member-pass");
         await SetTwoFactorAsync(factory, "member", enabled: true);
 
@@ -182,7 +183,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
         await SignInAsync(client, "admin", "admin");
 
         using var member = await PostAsync(client, "/api/account/users", new CreateAccountDto(" new-member ", "New Member", "temp-pass", false));
@@ -206,7 +207,7 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "member", "member-pass");
-        using var adminClient = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var adminClient = factory.CreateClient(NoRedirect);
         await SignInAsync(adminClient, "admin", "admin");
 
         using var duplicate = await PostAsync(adminClient, "/api/account/users", new CreateAccountDto("member", "Again", "temp-pass", false));
@@ -218,7 +219,7 @@ public sealed class AccountEndpointsTests
         Assert.Equal(HttpStatusCode.BadRequest, blank.StatusCode);
         Assert.Null(await FindUserAsync(factory, "weak-user"));
 
-        using var memberClient = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var memberClient = factory.CreateClient(NoRedirect);
         await SignInAsync(memberClient, "member", "member-pass");
         using var forbidden = await PostAsync(memberClient, "/api/account/users", new CreateAccountDto("sneaky", "Sneaky", "temp-pass", true));
         Assert.NotEqual(HttpStatusCode.Created, forbidden.StatusCode);
@@ -231,14 +232,14 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "fresh", "temp-pass", mustChange: true);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         using var login = await PostLoginFormAsync(client, "/account/login", new()
         {
             ["username"] = "fresh", ["password"] = "temp-pass", ["useTwoFactor"] = "false"
         });
         Assert.Contains("step=change", login.Headers.Location?.ToString());
-        Assert.Equal(HttpStatusCode.Redirect, (await client.GetAsync("/api/account/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/account/me")).StatusCode);
 
         using var mismatch = await PostLoginFormAsync(client, "/account/login/change-password", new()
         {
@@ -257,9 +258,9 @@ public sealed class AccountEndpointsTests
         Assert.False(stored.MustChangePassword);
         Assert.Null(stored.TemporaryPasswordExpiresUtc);
 
-        using var returning = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var returning = factory.CreateClient(NoRedirect);
         await SignInAsync(returning, "fresh", "brand-new1");
-        using var anonymous = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var anonymous = factory.CreateClient(NoRedirect);
         using var old = await PostLoginFormAsync(anonymous, "/account/login", new()
         {
             ["username"] = "fresh", ["password"] = "temp-pass", ["useTwoFactor"] = "false"
@@ -273,7 +274,7 @@ public sealed class AccountEndpointsTests
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
         await CreateMemberAsync(factory, "late", "temp-pass", mustChange: true, expiresUtc: DateTimeOffset.UtcNow.AddMinutes(-1));
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         using var login = await PostLoginFormAsync(client, "/account/login", new()
         {
@@ -294,7 +295,7 @@ public sealed class AccountEndpointsTests
     {
         using var root = new TemporaryDirectory();
         using var factory = new AccountFactory(root.Path);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(NoRedirect);
 
         var html = await client.GetStringAsync("/account/login");
         var script = System.Text.RegularExpressions.Regex.Match(html, "<script src=\"([^\"]*passwordToggle[^\"]*\\.js)\"").Groups[1].Value;
@@ -305,136 +306,5 @@ public sealed class AccountEndpointsTests
         using var response = await client.GetAsync(script);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("javascript", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    private static async Task<HttpResponseMessage> PostLoginFormAsync(HttpClient client, string path, Dictionary<string, string> fields)
-    {
-        fields["__RequestVerificationToken"] = await GetAntiforgeryTokenAsync(client);
-        return await client.PostAsync(path, new FormUrlEncodedContent(fields));
-    }
-
-    private static async Task<ApplicationUser?> FindUserAsync(WebApplicationFactory<Program> factory, string username)
-    {
-        using var scope = factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByNameAsync(username);
-    }
-
-    private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client) =>
-        (await client.GetFromJsonAsync<AntiforgeryTokenDto>("/api/antiforgery"))!.RequestToken;
-
-    private static async Task SignInAsync(HttpClient client, string username, string password)
-    {
-        var token = await GetAntiforgeryTokenAsync(client);
-        using var response = await client.PostAsync("/account/login", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["__RequestVerificationToken"] = token,
-            ["username"] = username,
-            ["password"] = password,
-            ["useTwoFactor"] = "false"
-        }));
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.DoesNotContain("error=1", response.Headers.Location?.ToString());
-
-        if (response.Headers.Location?.ToString().Contains("step=change", StringComparison.Ordinal) is true)
-        {
-            using var changed = await PostLoginFormAsync(client, "/account/login/change-password", new()
-            {
-                ["username"] = username,
-                ["temporaryPassword"] = password,
-                ["newPassword"] = password + "-changed",
-                ["confirmPassword"] = password + "-changed"
-            });
-            Assert.Equal(HttpStatusCode.Redirect, changed.StatusCode);
-            Assert.DoesNotContain("error=1", changed.Headers.Location?.ToString());
-        }
-    }
-
-    private static async Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string path, T payload)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(payload) };
-        request.Headers.Add("X-CSRF-TOKEN", await GetAntiforgeryTokenAsync(client));
-        return await client.SendAsync(request);
-    }
-
-    private static async Task CreateMemberAsync(WebApplicationFactory<Program> factory, string username, string password, bool twoFactor = false, bool mustChange = false, DateTimeOffset? expiresUtc = null)
-    {
-        using var scope = factory.Services.CreateScope();
-        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var result = await users.CreateAsync(new ApplicationUser
-        {
-            UserName = username,
-            DisplayName = "Member",
-            CreatedUtc = DateTimeOffset.UtcNow,
-            IsActive = true,
-            MustChangePassword = mustChange,
-            TemporaryPasswordExpiresUtc = expiresUtc ?? (mustChange ? DateTimeOffset.UtcNow.AddDays(7) : null),
-            TwoFactorEnabled = twoFactor
-        }, password);
-        Assert.True(result.Succeeded, string.Join("; ", result.Errors.Select(error => error.Description)));
-    }
-
-    private static async Task SetTwoFactorAsync(WebApplicationFactory<Program> factory, string username, bool enabled)
-    {
-        using var scope = factory.Services.CreateScope();
-        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var user = (await users.FindByNameAsync(username))!;
-        Assert.True((await users.SetTwoFactorEnabledAsync(user, enabled)).Succeeded);
-    }
-
-    private sealed class AccountFactory(string rootPath) : WebApplicationFactory<Program>
-    {
-        private readonly string _previewPath = CreateDirectory("account-preview");
-        private readonly string _cutPath = CreateDirectory("account-cuts");
-        private readonly string _compositionPath = CreateDirectory("account-composition");
-
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            // Program.cs reads Database:Path while building, before ConfigureAppConfiguration applies, so use host settings.
-            builder.UseSetting("Database:Path", Path.Combine(rootPath, "account-tests.db"));
-            builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["ArchiveRoot:Path"] = rootPath,
-                    ["VideoLibrary:Path"] = rootPath,
-                    ["ThumbnailCache:Path"] = _previewPath,
-                    ["VideoCut:Path"] = _cutPath,
-                    ["VideoComposition:Path"] = _compositionPath,
-                    ["Database:Path"] = Path.Combine(rootPath, "account-tests.db")
-                }));
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-            if (!disposing) return;
-
-            foreach (var path in new[] { _previewPath, _cutPath, _compositionPath })
-            {
-                if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
-            }
-        }
-
-        private static string CreateDirectory(string prefix)
-        {
-            var path = Path.Combine(Path.GetTempPath(), $"{prefix}-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(path);
-            return path;
-        }
-    }
-
-    private sealed class TemporaryDirectory : IDisposable
-    {
-        public TemporaryDirectory()
-        {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"account-api-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(Path);
-        }
-
-        public string Path { get; }
-
-        public void Dispose()
-        {
-            if (Directory.Exists(Path)) Directory.Delete(Path, recursive: true);
-        }
     }
 }

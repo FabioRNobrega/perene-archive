@@ -69,7 +69,7 @@ public sealed class ArchiveEndpointsComicProgressTests
     private sealed class VideoManagerFactory(string archiveRoot) : WebApplicationFactory<Program>
     {
         private readonly string _previewPath = Path.Combine(Path.GetTempPath(), $"comic-progress-preview-{Guid.NewGuid():N}");
-        protected override void ConfigureWebHost(IWebHostBuilder builder) { Directory.CreateDirectory(_previewPath); builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ArchiveRoot:Path"] = archiveRoot, ["VideoLibrary:Path"] = Path.Combine(archiveRoot, "Videos"), ["ThumbnailCache:Path"] = _previewPath, ["VideoCut:Path"] = Path.Combine(archiveRoot, "Videos", "Cuts"), ["VideoComposition:Path"] = Path.Combine(archiveRoot, "Videos", "VideoComposition"), ["HoverPreview:Enabled"] = "false" })); }
+        protected override void ConfigureWebHost(IWebHostBuilder builder) { TestHostSecurity.Apply(builder); Directory.CreateDirectory(_previewPath); builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ArchiveRoot:Path"] = archiveRoot, ["VideoLibrary:Path"] = Path.Combine(archiveRoot, "Videos"), ["ThumbnailCache:Path"] = _previewPath, ["VideoCut:Path"] = Path.Combine(archiveRoot, "Videos", "Cuts"), ["VideoComposition:Path"] = Path.Combine(archiveRoot, "Videos", "VideoComposition"), ["HoverPreview:Enabled"] = "false" })); }
         protected override void Dispose(bool disposing) { base.Dispose(disposing); if (disposing && Directory.Exists(_previewPath)) Directory.Delete(_previewPath, true); }
     }
 

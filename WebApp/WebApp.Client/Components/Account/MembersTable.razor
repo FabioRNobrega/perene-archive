@@ -1,0 +1,111 @@
+@inject AccountApiClient Accounts
+
+<section aria-label="Family members">
+    @if (!string.IsNullOrEmpty(_message)) { <div class="alert alert-success" role="status">@_message</div> }
+    @if (_temporaryPassword is not null)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status">
+            <span>Temporary password for <strong>@_temporaryFor</strong> (shown once):</span>
+            <code class="user-select-all">@_temporaryPassword</code>
+            <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => _temporaryPassword = null">Dismiss</button>
+        </div>
+    }
+    @foreach (var error in _errors) { <div class="alert alert-danger" role="alert">@error</div> }
+
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>User</th><th>Display name</th><th>Role</th><th>Status</th><th>Authenticator</th><th class="text-end">Actions</th></tr></thead>
+            <tbody>
+            @foreach (var user in Users)
+            {
+                var self = string.Equals(user.UserName, CurrentUserName, StringComparison.OrdinalIgnoreCase);
+                <tr>
+                    <td class="fw-semibold">@user.UserName</td>
+                    <td>@user.DisplayName</td>
+                    <td>@(user.IsAdmin ? "Administrator" : "Member")</td>
+                    <td>
+                        <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@(user.IsActive ? "Active" : "Inactive")</span>
+                        @if (user.MustChangePassword && user.TemporaryPasswordExpired)
+                        {
+                            <span class="badge text-bg-danger ms-1"><i class="bi bi-hourglass-bottom me-1" aria-hidden="true"></i>Temporary password expired</span>
+                        }
+                        else if (user.MustChangePassword)
+                        {
+                            <span class="badge text-bg-warning ms-1"><i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>Temporary password@(user.TemporaryPasswordExpiresUtc is { } expiry ? $" · expires {expiry.LocalDateTime:d MMM}" : null)</span>
+                        }
+                    </td>
+                    <td>@(user.TwoFactorEnabled ? "Enabled" : "Not enabled")</td>
+                    <td class="text-end">
+                        @if (_confirmingDelete == user.UserName)
+                        {
+                            <span class="me-2">Delete @user.UserName?</span>
+                            <button class="btn btn-danger btn-sm" disabled="@_busy" @onclick="() => DeleteAsync(user.UserName)">Delete</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _confirmingDelete = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <div class="btn-group" role="group" aria-label="Actions for @user.UserName">
+                                <button class="btn btn-outline-secondary" style="min-width:2.5rem;min-height:2.5rem" title="Reset password" aria-label="Reset password for @user.UserName" disabled="@_busy" @onclick="() => ResetPasswordAsync(user.UserName)"><i class="bi bi-key" aria-hidden="true"></i></button>
+                                @if (user.TwoFactorEnabled)
+                                {
+                                    <button class="btn btn-outline-secondary" style="min-width:2.5rem;min-height:2.5rem" title="Reset authenticator" aria-label="Reset authenticator for @user.UserName" disabled="@_busy" @onclick="() => ResetTotpAsync(user.UserName)"><i class="bi bi-shield-slash" aria-hidden="true"></i></button>
+                                }
+                                <button class="btn btn-outline-secondary" style="min-width:2.5rem;min-height:2.5rem" title="@(user.IsAdmin ? "Remove administrator role" : "Make administrator")" aria-label="@(user.IsAdmin ? "Remove administrator role from" : "Make administrator:") @user.UserName" disabled="@_busy" @onclick="() => ToggleRoleAsync(user)"><i class="bi @(user.IsAdmin ? "bi-person-dash" : "bi-person-up")" aria-hidden="true"></i></button>
+                                <button class="btn btn-outline-secondary" style="min-width:2.5rem;min-height:2.5rem" title="@(user.IsActive ? "Deactivate" : "Reactivate")" aria-label="@(user.IsActive ? "Deactivate" : "Reactivate") @user.UserName" disabled="@_busy" @onclick="() => ToggleActiveAsync(user)"><i class="bi @(user.IsActive ? "bi-person-slash" : "bi-person-check")" aria-hidden="true"></i></button>
+                                <button class="btn btn-outline-danger" style="min-width:2.5rem;min-height:2.5rem" title="Delete" aria-label="Delete @user.UserName" disabled="@(_busy || self)" @onclick="() => _confirmingDelete = user.UserName"><i class="bi bi-trash3" aria-hidden="true"></i></button>
+                            </div>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AccountUserDto> Users { get; set; } = [];
+    [Parameter] public string? CurrentUserName { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string? _message, _temporaryPassword, _temporaryFor, _confirmingDelete;
+    private IReadOnlyList<string> _errors = [];
+    private bool _busy;
+
+    private Task DeleteAsync(string userName) => RunAsync(userName, "delete", $"{userName} was deleted.");
+    private Task ResetTotpAsync(string userName) => RunAsync(userName, "reset-totp", $"Authenticator reset for {userName}.");
+    private Task ToggleRoleAsync(AccountUserDto user) => RunAsync(user.UserName, user.IsAdmin ? "demote" : "promote", $"Role updated for {user.UserName}.");
+    private Task ToggleActiveAsync(AccountUserDto user) =>
+        RunAsync(user.UserName, user.IsActive ? "deactivate" : "reactivate", $"{user.UserName} was {(user.IsActive ? "deactivated" : "reactivated")}.");
+
+    private Task RunAsync(string userName, string action, string success) => GuardAsync(async () =>
+    {
+        _errors = await Accounts.ManageUserAsync(userName, action);
+        _confirmingDelete = null;
+        if (_errors.Count == 0) _message = success;
+    });
+
+    private Task ResetPasswordAsync(string userName) => GuardAsync(async () =>
+    {
+        var (password, errors) = await Accounts.ResetPasswordAsync(userName);
+        _errors = errors;
+        if (password is null) return;
+        _temporaryPassword = password;
+        _temporaryFor = userName;
+        _message = $"Password reset for {userName}. Share the temporary password with them privately.";
+    });
+
+    private async Task GuardAsync(Func<Task> operation)
+    {
+        _message = null;
+        _errors = [];
+        _busy = true;
+        try
+        {
+            await operation();
+            await OnChanged.InvokeAsync();
+        }
+        catch (HttpRequestException) { _errors = ["The request could not be completed. Try again."]; }
+        finally { _busy = false; }
+    }
+}
