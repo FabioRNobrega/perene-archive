@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&amp;family=Zilla+Slab:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&amp;display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+          crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["WebApp.styles.css"]" />
+    <title>@(Page == "login" ? "Sign in" : "Account") · PereneArchive</title>
+</head>
+
+<body>
+    <AccountPage Page="@Page" ShowTotp="@ShowTotp" ShowChange="@ShowChange" HasError="@HasError" Reason="@Reason" ReturnUrl="@ReturnUrl" Username="@Username" />
+    <script src="@Assets["js/passwordToggle.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    [Parameter] public string Page { get; set; } = "login";
+    [Parameter] public bool ShowTotp { get; set; }
+    [Parameter] public bool ShowChange { get; set; }
+    [Parameter] public bool HasError { get; set; }
+    [Parameter] public string? Reason { get; set; }
+    [Parameter] public string? ReturnUrl { get; set; }
+    [Parameter] public string? Username { get; set; }
+}

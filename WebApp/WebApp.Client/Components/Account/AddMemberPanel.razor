@@ -1,0 +1,62 @@
+@inject AccountApiClient Accounts
+
+<section class="card border mb-4" aria-labelledby="add-member-title">
+    <div class="card-body">
+        <h3 id="add-member-title" class="h5 card-title">Add member</h3>
+        <p class="text-body-secondary">The member signs in with this temporary password and must choose their own. It expires in seven days.</p>
+        @if (!string.IsNullOrEmpty(_message)) { <div class="alert alert-success" role="status">@_message</div> }
+        @foreach (var error in _errors) { <div class="alert alert-danger" role="alert">@error</div> }
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="new-member-username">Username</label>
+                <input id="new-member-username" class="form-control" autocomplete="off" @bind="_userName" @bind:event="oninput" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="new-member-display-name">Display name</label>
+                <input id="new-member-display-name" class="form-control" autocomplete="off" @bind="_displayName" @bind:event="oninput" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="new-member-password">Temporary password</label>
+                <PasswordInput Id="new-member-password" Autocomplete="new-password" @bind-Value="_password" />
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input id="new-member-admin" class="form-check-input" type="checkbox" @bind="_isAdmin" />
+                    <label class="form-check-label" for="new-member-admin">Administrator</label>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-secondary" disabled="@_busy" @onclick="CreateAsync"><i class="bi bi-person-plus me-2" aria-hidden="true"></i>Create member</button>
+            <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="OnClose">Close</button>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public EventCallback OnCreated { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _userName = "", _displayName = "", _password = "";
+    private bool _isAdmin, _busy;
+    private string? _message;
+    private IReadOnlyList<string> _errors = [];
+
+    private async Task CreateAsync()
+    {
+        _message = null;
+        _errors = [];
+        _busy = true;
+        try
+        {
+            var (user, errors) = await Accounts.CreateUserAsync(new CreateAccountDto(_userName, _displayName, _password, _isAdmin));
+            if (user is null) { _errors = errors; return; }
+            _message = $"{user.UserName} was added. Share the temporary password with them privately.";
+            _userName = _displayName = _password = "";
+            _isAdmin = false;
+            await OnCreated.InvokeAsync();
+        }
+        catch (HttpRequestException) { _errors = ["The member could not be created. Try again."]; }
+        finally { _busy = false; }
+    }
+}

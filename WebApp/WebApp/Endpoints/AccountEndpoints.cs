@@ -1,8 +1,13 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
+using WebApp.Client.Models;
 using WebApp.Identity;
+using Net.Codecrete.QrCodeGenerator;
+using Microsoft.AspNetCore.Http.HttpResults;
+using WebApp.Components.Account;
 
 namespace WebApp.Endpoints;
 
@@ -10,26 +15,138 @@ public static class AccountEndpoints
 {
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
-        var accountApi = app.MapGroup("/api/account").RequireAuthorization(policy => policy.RequireRole("Admin"));
+        // Self-service routes act only on the signed-in caller; only the member list is Admin-restricted.
+        var accountApi = app.MapGroup("/api/account").RequireAuthorization();
         accountApi.MapGet("/users", async (UserManager<ApplicationUser> users) =>
-            Results.Ok(users.Users.OrderBy(user => user.UserName).Select(user => new
-            {
-                user.UserName,
-                user.DisplayName,
-                user.IsActive,
-                user.TwoFactorEnabled
-            }).ToList()));
-        app.MapGet("/account/login", (HttpContext context, IAntiforgery antiforgery, string? returnUrl) =>
-                Results.Content(LoginPage(returnUrl, antiforgery.GetAndStoreTokens(context).RequestToken!), "text/html"))
-            .AllowAnonymous();
-        app.MapPost("/account/login", async (HttpContext context, IAntiforgery antiforgery, ApplicationSignInManager signIn,
-            [FromForm] string username, [FromForm] string password, [FromForm] string? authenticatorCode, [FromForm] string? returnUrl) =>
+        {
+            var adminIds = (await users.GetUsersInRoleAsync("Admin")).Select(user => user.Id).ToHashSet();
+            var members = await users.Users.OrderBy(user => user.UserName).ToListAsync();
+            return Results.Ok(members.Select(user => new AccountUserDto(user.UserName!, user.DisplayName, user.IsActive, user.TwoFactorEnabled, adminIds.Contains(user.Id))).ToList());
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        accountApi.MapPost("/users", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, CreateAccountDto request) =>
         {
             await antiforgery.ValidateRequestAsync(context);
-            var result = await signIn.PasswordSignInAsync(username, password, authenticatorCode, false);
+            var userName = request.UserName?.Trim() ?? string.Empty;
+            var displayName = request.DisplayName?.Trim() ?? string.Empty;
+            if (userName.Length == 0 || displayName.Length == 0 || string.IsNullOrEmpty(request.TemporaryPassword))
+                return Results.BadRequest(new[] { "Username, display name and a temporary password are required." });
+            if (await users.FindByNameAsync(userName) is not null)
+                return Results.Conflict(new[] { "That username is already taken." });
+
+            var creator = await users.GetUserAsync(context.User);
+            var user = new ApplicationUser
+            {
+                UserName = userName,
+                DisplayName = displayName,
+                CreatedUtc = DateTimeOffset.UtcNow,
+                CreatedByUserId = creator?.Id,
+                IsActive = true,
+                MustChangePassword = true,
+                TemporaryPasswordExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
+            };
+            var created = await users.CreateAsync(user, request.TemporaryPassword);
+            if (!created.Succeeded)
+                return Results.BadRequest(created.Errors.Select(error => error.Description).ToArray());
+            if (request.IsAdmin && !(await users.AddToRoleAsync(user, "Admin")).Succeeded)
+            {
+                await users.DeleteAsync(user);
+                return Results.BadRequest(new[] { "The administrator role could not be assigned." });
+            }
+            return Results.Created($"/api/account/users/{Uri.EscapeDataString(userName)}",
+                new AccountUserDto(userName, displayName, true, false, request.IsAdmin));
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        accountApi.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> users) =>
+            await users.GetUserAsync(context.User) is { } user
+                ? Results.Ok(new AccountMeDto(user.DisplayName, user.TwoFactorEnabled))
+                : Results.Unauthorized());
+        app.MapGet("/api/antiforgery", (HttpContext context, IAntiforgery antiforgery) =>
+            Results.Ok(new AntiforgeryTokenDto(antiforgery.GetAndStoreTokens(context).RequestToken!))).AllowAnonymous();
+        accountApi.MapPost("/preferences", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, AccountPreferencesDto request) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var user = await users.GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            user.DisplayName = request.DisplayName.Trim();
+            var result = await users.UpdateAsync(user);
+            return result.Succeeded ? Results.NoContent() : Results.BadRequest();
+        });
+        accountApi.MapPost("/change-password", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, ChangePasswordDto request) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var user = await users.GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            var result = await users.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+            return result.Succeeded ? Results.NoContent() : Results.BadRequest();
+        });
+        accountApi.MapPost("/totp", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var user = await users.GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            await users.ResetAuthenticatorKeyAsync(user);
+            var key = (await users.GetAuthenticatorKeyAsync(user))!;
+            var uri = $"otpauth://totp/{Uri.EscapeDataString($"PereneArchive:{user.UserName}")}?secret={key}&issuer=PereneArchive&digits=6";
+            var svg = QrCode.EncodeText(uri, QrCode.Ecc.Medium).ToSvgString(4);
+            var qrCodeDataUrl = "data:image/svg+xml;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(svg));
+            return Results.Ok(new TotpSetupDto(key, qrCodeDataUrl, []));
+        });
+        accountApi.MapPost("/totp/confirm", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, TotpConfirmationDto request) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var user = await users.GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            var valid = await users.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, request.Code.Replace(" ", string.Empty).Replace("-", string.Empty));
+            if (!valid) return Results.BadRequest();
+            await users.SetTwoFactorEnabledAsync(user, true);
+            return Results.Ok((await users.GenerateNewTwoFactorRecoveryCodesAsync(user, 10))?.ToArray() ?? []);
+        });
+        accountApi.MapPost("/totp/disable", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, DisableTotpDto request) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var user = await users.GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            if (string.IsNullOrEmpty(request.CurrentPassword) || !await users.CheckPasswordAsync(user, request.CurrentPassword))
+                return Results.BadRequest();
+            var disabled = await users.SetTwoFactorEnabledAsync(user, false);
+            if (!disabled.Succeeded) return Results.BadRequest();
+            var reset = await users.ResetAuthenticatorKeyAsync(user);
+            if (!reset.Succeeded) return Results.BadRequest();
+            user = (await users.GetUserAsync(context.User))!;
+            user.AuthzVersion++;
+            return (await users.UpdateAsync(user)).Succeeded ? Results.NoContent() : Results.BadRequest();
+        });
+        accountApi.MapPost("/logout", async (HttpContext context, IAntiforgery antiforgery) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            await context.SignOutAsync(IdentityConstants.ApplicationScheme);
+            return Results.NoContent();
+        });
+        app.MapGet("/account/login", (string? returnUrl, string? step, string? username, string? error, string? reason) =>
+                new RazorComponentResult<AccountDocument>(new Dictionary<string, object?> { ["Page"] = "login", ["ReturnUrl"] = returnUrl, ["ShowTotp"] = step == "totp", ["ShowChange"] = step == "change", ["Username"] = username, ["HasError"] = error is not null, ["Reason"] = reason }))
+            .AllowAnonymous();
+        app.MapPost("/account/login", async (HttpContext context, IAntiforgery antiforgery, ApplicationSignInManager signIn,
+            [FromForm] string username, [FromForm] string? password, [FromForm] string? authenticatorCode, [FromForm] bool useTwoFactor, [FromForm] string? returnUrl) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var result = useTwoFactor
+                ? await signIn.TwoFactorSignInAsync(username, authenticatorCode ?? string.Empty)
+                : await signIn.PasswordSignInAsync(username, password ?? string.Empty, null, false);
+            if (result.IsNotAllowed && !useTwoFactor && await signIn.RequiresPasswordChangeAsync(username, password ?? string.Empty))
+                return Results.Redirect($"/account/login?step=change&username={Uri.EscapeDataString(username)}&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            if (result.RequiresTwoFactor)
+                return Results.Redirect($"/account/login?step=totp&username={Uri.EscapeDataString(username)}&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             return result.Succeeded
                 ? Results.Redirect(IsLocal(returnUrl) ? returnUrl! : "/")
                 : Results.Redirect("/account/login?error=1");
+        }).AllowAnonymous();
+        app.MapPost("/account/login/change-password", async (HttpContext context, IAntiforgery antiforgery, ApplicationSignInManager signIn,
+            [FromForm] string username, [FromForm] string temporaryPassword, [FromForm] string newPassword, [FromForm] string confirmPassword, [FromForm] string? returnUrl) =>
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            var retry = $"/account/login?step=change&username={Uri.EscapeDataString(username)}&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}&error=1";
+            if (newPassword != confirmPassword) return Results.Redirect(retry + "&reason=mismatch");
+            var result = await signIn.ChangeTemporaryPasswordAsync(username, temporaryPassword, newPassword);
+            return result.Succeeded ? Results.Redirect(IsLocal(returnUrl) ? returnUrl! : "/") : Results.Redirect(retry);
         }).AllowAnonymous();
         app.MapPost("/account/logout", async (HttpContext context, IAntiforgery antiforgery) =>
         {
@@ -37,73 +154,9 @@ public static class AccountEndpoints
             await context.SignOutAsync(IdentityConstants.ApplicationScheme);
             return Results.Redirect("/account/login");
         }).RequireAuthorization();
-        app.MapGet("/account/change-password", (HttpContext context, IAntiforgery antiforgery) =>
-                Results.Content(ChangePasswordPage(antiforgery.GetAndStoreTokens(context).RequestToken!), "text/html"))
-            .RequireAuthorization();
-        app.MapPost("/account/change-password", async (HttpContext context, IAntiforgery antiforgery,
-            UserManager<ApplicationUser> users, [FromForm] string currentPassword, [FromForm] string newPassword) =>
-        {
-            await antiforgery.ValidateRequestAsync(context);
-            var user = await users.GetUserAsync(context.User);
-            if (user is null) return Results.Redirect("/account/login");
-            var result = await users.ChangePasswordAsync(user, currentPassword, newPassword);
-            if (!result.Succeeded) return Results.Redirect("/account/change-password?error=1");
-            user.MustChangePassword = false;
-            user.TemporaryPasswordExpiresUtc = null;
-            user.AuthzVersion++;
-            await users.UpdateAsync(user);
-            return Results.Redirect("/?passwordChanged=1");
-        }).RequireAuthorization();
-        app.MapGet("/account/preferences", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users) =>
-        {
-            var user = await users.GetUserAsync(context.User);
-            return user is null ? Results.Redirect("/account/login") : Results.Content(PreferencesPage(antiforgery.GetAndStoreTokens(context).RequestToken!, user.DisplayName), "text/html");
-        }).RequireAuthorization();
-        app.MapPost("/account/preferences", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users, [FromForm] string displayName) =>
-        {
-            await antiforgery.ValidateRequestAsync(context);
-            var user = await users.GetUserAsync(context.User);
-            if (user is null) return Results.Redirect("/account/login");
-            user.DisplayName = displayName.Trim();
-            await users.UpdateAsync(user);
-            return Results.Redirect("/family");
-        }).RequireAuthorization();
-        app.MapGet("/account/totp", (HttpContext context, IAntiforgery antiforgery) => Results.Content(TotpPage(antiforgery.GetAndStoreTokens(context).RequestToken!, null, []), "text/html")).RequireAuthorization();
-        app.MapPost("/account/totp", async (HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> users) =>
-        {
-            await antiforgery.ValidateRequestAsync(context);
-            var user = await users.GetUserAsync(context.User);
-            if (user is null) return Results.Redirect("/account/login");
-            await users.ResetAuthenticatorKeyAsync(user);
-            await users.SetTwoFactorEnabledAsync(user, true);
-            var key = await users.GetAuthenticatorKeyAsync(user);
-            var recoveryCodes = await users.GenerateNewTwoFactorRecoveryCodesAsync(user, 10);
-            return Results.Content(TotpPage(antiforgery.GetAndStoreTokens(context).RequestToken!, key, recoveryCodes ?? []), "text/html");
-        }).RequireAuthorization();
-        app.MapGet("/account/logout", (HttpContext context, IAntiforgery antiforgery) => Results.Content(LogoutPage(antiforgery.GetAndStoreTokens(context).RequestToken!), "text/html")).RequireAuthorization();
+        app.MapGet("/account/logout", () => new RazorComponentResult<AccountDocument>(new Dictionary<string, object?> { ["Page"] = "logout" })).RequireAuthorization();
         return app;
     }
 
     private static bool IsLocal(string? value) => !string.IsNullOrWhiteSpace(value) && value.StartsWith('/') && !value.StartsWith("//");
-    private static string LoginPage(string? returnUrl, string requestToken) => $$"""
-        <!doctype html><html data-bs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><title>Sign in · PereneArchive</title></head>
-        <body class="bg-body-tertiary"><main class="container py-5"><section class="card shadow-sm mx-auto" style="max-width:28rem"><div class="card-body p-4"><h1 class="h3">Sign in</h1><p class="text-body-secondary">Use your PereneArchive account.</p><form method="post" action="/account/login"><input name="__RequestVerificationToken" type="hidden" value="{{System.Net.WebUtility.HtmlEncode(requestToken)}}"><input type="hidden" name="returnUrl" value="{{System.Net.WebUtility.HtmlEncode(returnUrl ?? "/")}}"><div class="mb-3"><label class="form-label" for="username">Username</label><input class="form-control" id="username" name="username" autocomplete="username" required></div><div class="mb-3"><label class="form-label" for="password">Password</label><input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required></div><div class="mb-3"><label class="form-label" for="authenticatorCode">Authenticator code <span class="text-body-secondary">(if enabled)</span></label><input class="form-control" id="authenticatorCode" name="authenticatorCode" inputmode="numeric" autocomplete="one-time-code"></div><button class="btn btn-primary w-100">Sign in</button></form></div></section></main></body></html>
-        """;
-
-    private static string ChangePasswordPage(string requestToken) => $$"""
-        <!doctype html><html data-bs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><title>Change password · PereneArchive</title></head>
-        <body class="bg-body-tertiary"><main class="container py-5"><section class="card shadow-sm mx-auto" style="max-width:28rem"><div class="card-body p-4"><h1 class="h3">Change password</h1><form method="post" action="/account/change-password"><input name="__RequestVerificationToken" type="hidden" value="{{System.Net.WebUtility.HtmlEncode(requestToken)}}"><div class="mb-3"><label class="form-label" for="currentPassword">Current password</label><input class="form-control" id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="mb-3"><label class="form-label" for="newPassword">New password</label><input class="form-control" id="newPassword" name="newPassword" type="password" autocomplete="new-password" required></div><button class="btn btn-primary w-100">Update password</button></form></div></section></main></body></html>
-        """;
-
-    private static string PreferencesPage(string requestToken, string displayName) => $$"""
-        <!doctype html><html data-bs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><title>Preferences · PereneArchive</title></head><body class="bg-body-tertiary"><main class="container py-5"><section class="card shadow-sm mx-auto" style="max-width:28rem"><div class="card-body p-4"><h1 class="h3">Your preferences</h1><form method="post"><input name="__RequestVerificationToken" type="hidden" value="{{System.Net.WebUtility.HtmlEncode(requestToken)}}"><label class="form-label" for="displayName">Display name</label><input class="form-control mb-3" id="displayName" name="displayName" value="{{System.Net.WebUtility.HtmlEncode(displayName)}}" required><button class="btn btn-primary">Save</button></form></div></section></main></body></html>
-        """;
-
-    private static string TotpPage(string requestToken, string? key, IEnumerable<string> recoveryCodes) => $$"""
-        <!doctype html><html data-bs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><title>Authenticator · PereneArchive</title></head><body class="bg-body-tertiary"><main class="container py-5"><section class="card shadow-sm mx-auto" style="max-width:34rem"><div class="card-body p-4"><h1 class="h3">Authenticator app</h1>{{(key is null ? "<p>Enable TOTP to obtain a new authenticator key.</p><form method=\"post\"><input name=\"__RequestVerificationToken\" type=\"hidden\" value=\"" + System.Net.WebUtility.HtmlEncode(requestToken) + "\"><button class=\"btn btn-primary\">Enable TOTP</button></form>" : "<p>Add this key to your authenticator app. Save these recovery codes now; they will not be shown again.</p><code class=\"d-block p-3 bg-body-secondary mb-3\">" + System.Net.WebUtility.HtmlEncode(key) + "</code><ul>" + string.Join("", recoveryCodes.Select(code => "<li><code>" + System.Net.WebUtility.HtmlEncode(code) + "</code></li>")) + "</ul>")}}</div></section></main></body></html>
-        """;
-
-    private static string LogoutPage(string requestToken) => $$"""
-        <!doctype html><html data-bs-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"><title>Sign out · PereneArchive</title></head><body class="bg-body-tertiary"><main class="container py-5"><section class="card shadow-sm mx-auto" style="max-width:28rem"><div class="card-body p-4"><h1 class="h3">Sign out</h1><form method="post" action="/account/logout"><input name="__RequestVerificationToken" type="hidden" value="{{System.Net.WebUtility.HtmlEncode(requestToken)}}"><button class="btn btn-outline-danger">Sign out</button></form></div></section></main></body></html>
-        """;
 }

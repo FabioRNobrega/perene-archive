@@ -1,0 +1,76 @@
+@using Microsoft.AspNetCore.Antiforgery
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor HttpContextAccessor
+
+<main class="container min-vh-100 d-flex align-items-center justify-content-center py-4">
+    <section class="card shadow-sm w-100" style="max-width:30rem">
+        <div class="card-body p-4 p-md-5">
+            <div class="d-flex align-items-center gap-2 mb-4"><i class="bi bi-archive text-primary fs-3" aria-hidden="true"></i><span class="card-title h3 mb-0">PereneArchive</span></div>
+            @if (Page == "login" && ShowChange)
+            {
+                <p class="text-uppercase small text-brand-gold fw-semibold mb-1">First sign-in</p>
+                <h1 class="h2 card-title">Choose your password</h1>
+                <p class="text-body-secondary mb-4">Replace the temporary password you were given with one only you know.</p>
+                @if (HasError) { <div class="alert alert-danger" role="alert">@(Reason == "mismatch" ? "The new passwords do not match." : "Those details were not accepted. Check the temporary password and choose a longer new password.")</div> }
+                <form method="post" action="/account/login/change-password">
+                    @Token
+                    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                    <input type="hidden" name="username" value="@Username" />
+                    <label class="form-label" for="temporaryPassword">Temporary password</label>
+                    @PasswordField("temporaryPassword", "temporaryPassword", "current-password")
+                    <label class="form-label" for="newPassword">New password</label>
+                    @PasswordField("newPassword", "newPassword", "new-password")
+                    <label class="form-label" for="confirmPassword">Confirm new password</label>
+                    @PasswordField("confirmPassword", "confirmPassword", "new-password")
+                    <button class="btn btn-primary w-100">Save password and sign in</button>
+                </form>
+            }
+            else if (Page == "login")
+            {
+                <p class="text-uppercase small text-brand-gold fw-semibold mb-1">Private archive</p>
+                <h1 class="h2 card-title">@(ShowTotp ? "Verify your sign-in" : "Welcome back")</h1>
+                <p class="text-body-secondary mb-4">@(ShowTotp ? "Enter the current code from your authenticator app." : "Sign in to continue to your archive.")</p>
+                @if (HasError) { <div class="alert alert-danger" role="alert">We could not sign you in. Check your details and try again.</div> }
+                <form method="post" action="/account/login">
+                    @Token
+                    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                    <input type="hidden" name="useTwoFactor" value="@ShowTotp.ToString().ToLowerInvariant()" />
+                    @if (ShowTotp)
+                    {
+                        <input type="hidden" name="username" value="@Username" />
+                        <label class="form-label" for="authenticatorCode">Authenticator code</label>
+                        <input id="authenticatorCode" class="form-control mb-3" name="authenticatorCode" inputmode="numeric" autocomplete="one-time-code" autofocus required />
+                    }
+                    else
+                    {
+                        <label class="form-label" for="username">Username</label>
+                        <input id="username" class="form-control mb-3" name="username" autocomplete="username" autofocus required />
+                        <label class="form-label" for="password">Password</label>
+                        @PasswordField("password", "password", "current-password")
+                    }
+                    <button class="btn btn-primary w-100">@(ShowTotp ? "Verify and sign in" : "Continue")</button>
+                </form>
+            }
+            else if (Page == "logout") { <h1 class="h3 card-title">Sign out</h1><p class="text-body-secondary">End this session on this device.</p><form method="post" action="/account/logout">@Token<button class="btn btn-danger">Sign out</button></form> }
+            else { <h1 class="h3 card-title">Account</h1><p class="text-body-secondary">Use the Family page to manage this account.</p><a class="btn btn-secondary" href="/family">Open Family</a> }
+        </div>
+    </section>
+</main>
+
+@code {
+    [Parameter] public string Page { get; set; } = "login";
+    [Parameter] public bool ShowTotp { get; set; }
+    [Parameter] public bool ShowChange { get; set; }
+    [Parameter] public bool HasError { get; set; }
+    [Parameter] public string? Reason { get; set; }
+    [Parameter] public string? ReturnUrl { get; set; }
+    [Parameter] public string? Username { get; set; }
+    private string TokenValue => Antiforgery.GetAndStoreTokens(HttpContextAccessor.HttpContext!).RequestToken!;
+    private RenderFragment Token => @<input name="__RequestVerificationToken" type="hidden" value="@TokenValue" />;
+
+    // The eye button stays hidden until wwwroot/js/passwordToggle.js enhances it, so the form works without JavaScript.
+    private RenderFragment PasswordField(string id, string name, string autocomplete) => @<div class="input-group mb-3">
+        <input id="@id" class="form-control" name="@name" type="password" autocomplete="@autocomplete" required />
+        <button type="button" class="btn btn-outline-secondary px-3 py-2" hidden data-password-toggle="@id" aria-label="Show password" aria-pressed="false" title="Show password"><i class="bi bi-eye" aria-hidden="true"></i></button>
+    </div>;
+}

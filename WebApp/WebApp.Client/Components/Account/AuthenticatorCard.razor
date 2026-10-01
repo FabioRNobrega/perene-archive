@@ -1,0 +1,113 @@
+@inject AccountApiClient Accounts
+
+<section class="card border h-100" aria-labelledby="authenticator-card-title">
+    <div class="card-body">
+        <div class="d-flex align-items-start justify-content-between gap-3">
+            <h2 id="authenticator-card-title" class="h5 card-title">Authenticator app</h2>
+            @if (_me is not null)
+            {
+                <span class="badge @(_me.TwoFactorEnabled ? "text-bg-success" : "text-bg-secondary")"><i class="bi @(_me.TwoFactorEnabled ? "bi-shield-check" : "bi-shield-slash") me-1" aria-hidden="true"></i>@(_me.TwoFactorEnabled ? "Enabled" : "Not enabled")</span>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(_message)) { <div class="alert alert-success" role="status">@_message</div> }
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger" role="alert">@_error</div> }
+
+        @if (_me is null && _error is null)
+        {
+            <p class="text-body-secondary mb-0">Loading…</p>
+        }
+        else if (_totp is not null)
+        {
+            <p class="text-body-secondary">Scan this QR code in your authenticator app, then enter its current six-digit code to confirm setup.</p>
+            <div class="row align-items-center g-4">
+                <div class="col-sm-auto"><img class="bg-white rounded p-2" width="192" height="192" src="@_totp.QrCodeDataUrl" alt="Scan this QR code with your authenticator app" /></div>
+                <div class="col">
+                    <p class="small text-body-secondary">Manual key: <code>@_totp.AuthenticatorKey</code></p>
+                    @if (_recovery is null)
+                    {
+                        <label class="form-label" for="authenticator-code">Authenticator code</label>
+                        <div class="input-group">
+                            <input id="authenticator-code" class="form-control" inputmode="numeric" autocomplete="one-time-code" @bind="_code" />
+                            <button class="btn btn-secondary" disabled="@_busy" @onclick="ConfirmAsync">Confirm</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <h3 class="h6">Recovery codes</h3>
+                        <p class="text-body-secondary mb-2">Save these in a secure place. They are shown once.</p>
+                        <code class="d-block p-3 bg-body-tertiary rounded">@string.Join("  ", _recovery)</code>
+                        <button class="btn btn-secondary mt-3" @onclick="DismissSetup">Done</button>
+                    }
+                </div>
+            </div>
+        }
+        else if (_me is { TwoFactorEnabled: true })
+        {
+            <p class="text-body-secondary">Your account asks for a code from your authenticator app when you sign in.</p>
+            @if (_confirmingDisable)
+            {
+                <label class="form-label" for="disable-password">Current password</label>
+                <PasswordInput Id="disable-password" Class="mb-3" Autocomplete="current-password" @bind-Value="_password" />
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger" disabled="@_busy" @onclick="DisableAsync">Disable authenticator</button>
+                    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="CancelDisable">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <button class="btn btn-outline-danger" @onclick="StartDisable"><i class="bi bi-shield-slash me-2" aria-hidden="true"></i>Disable authenticator</button>
+            }
+        }
+        else if (_me is not null)
+        {
+            <p class="text-body-secondary">Add a second sign-in step using a TOTP authenticator.</p>
+            <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="StartSetupAsync"><i class="bi bi-qr-code me-2" aria-hidden="true"></i>Set up authenticator</button>
+        }
+    </div>
+</section>
+
+@code {
+    private AccountMeDto? _me;
+    private TotpSetupDto? _totp;
+    private IReadOnlyList<string>? _recovery;
+    private string _code = "", _password = "";
+    private string? _message, _error;
+    private bool _busy, _confirmingDisable;
+
+    protected override Task OnInitializedAsync() => RunAsync(RefreshAsync, "Your authenticator status could not be loaded.");
+
+    private async Task RefreshAsync() => _me = await Accounts.GetMeAsync();
+
+    private Task StartSetupAsync() => RunAsync(async () => _totp = await Accounts.PostAsync<object, TotpSetupDto>("api/account/totp", new { }),
+        "Authenticator setup could not be started.");
+
+    private Task ConfirmAsync() => RunAsync(async () =>
+    {
+        _recovery = await Accounts.PostAsync<TotpConfirmationDto, string[]>("api/account/totp/confirm", new TotpConfirmationDto(_code));
+        _code = "";
+        await RefreshAsync();
+        _message = "Authenticator protection enabled.";
+    }, "That code was not accepted. Check your authenticator app and try again.");
+
+    private Task DisableAsync() => RunAsync(async () =>
+    {
+        await Accounts.PostAsync("api/account/totp/disable", new DisableTotpDto(_password));
+        _password = "";
+        _confirmingDisable = false;
+        await RefreshAsync();
+        _message = "Authenticator disabled.";
+    }, "The authenticator could not be disabled. Check your password and try again.");
+
+    private void StartDisable() { _message = _error = null; _confirmingDisable = true; }
+    private void CancelDisable() { _confirmingDisable = false; _password = ""; _error = null; }
+    private void DismissSetup() { _totp = null; _recovery = null; }
+
+    private async Task RunAsync(Func<Task> operation, string failure)
+    {
+        _message = _error = null;
+        _busy = true;
+        try { await operation(); }
+        catch (HttpRequestException) { _error = failure; }
+        finally { _busy = false; }
+    }
+}

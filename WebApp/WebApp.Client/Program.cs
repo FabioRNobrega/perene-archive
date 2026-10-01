@@ -10,5 +10,6 @@ builder.Services.AddScoped(_ => new HttpClient
 });
 builder.Services.AddScoped<PersistentPlayerState>();
 builder.Services.AddScoped<PersistentPlayerCommands>();
+builder.Services.AddScoped<AccountApiClient>();
 
 await builder.Build().RunAsync();

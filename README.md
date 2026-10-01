@@ -29,6 +29,8 @@ Table of contents
 
 | Area | Status | Supported capabilities and formats |
 | --- | :---: | --- |
+| Account access | ✅ | The pre-sign-in and TOTP verification pages are static server-rendered pages that use the PereneArchive dark design system and work without JavaScript. |
+| Account security | ✅ | Every signed-in user can edit their display name, change their password, and turn their authenticator app on (confirmed with a current code) or off (confirmed with their password) from the Family page; messages appear in the card they belong to. Password fields have a show/hide eye button (on the sign-in page it appears only when JavaScript is available). Administrators can add members or other administrators from Family Members with a temporary password that expires after seven days; the new member must choose their own password at first sign-in. Only the Family Members tab is limited to administrators. |
 | Video library | ✅ | Browse and play `.mp4`, `.webm`, `.mov`, and `.m4v` videos. |
 | Video conversion | ✅ | Plan each supported source (including `.vob`) before queueing a non-destructive, collision-safe sibling MP4: choose a compatible/compression profile, non-upscaling resolution (original, 1080p, 720p, or 480p; 720p stays the recommended default for larger sources), quality or target size, and review a server-calculated estimated output size. Current-session jobs can pause/resume or stop safely; burn one embedded subtitle track or detected closed captions permanently into the video rather than preserve switchable captions. |
 | Video editing | ✅ | Reframe vertical-video previews, set A/B points, and export stream-copied cuts. |

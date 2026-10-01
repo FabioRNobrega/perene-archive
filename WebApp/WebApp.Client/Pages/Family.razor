@@ -1,36 +1,51 @@
 @page "/family"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
-@inject HttpClient Http
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using WebApp.Client.Components.Account
+@inject AccountApiClient Accounts
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthState
 
 <PageTitle>Family · PereneArchive</PageTitle>
 
-<header class="mb-4">
-    <h1 class="h3 mb-0">Family</h1>
-    <p class="text-body-secondary mb-0">Account management</p>
-</header>
-
-<section class="card mb-4">
-    <div class="card-body">
-        <h2 class="h5">Your account</h2>
-        <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-secondary" href="/account/preferences">Preferences</a>
-            <a class="btn btn-outline-secondary" href="/account/change-password">Change password</a>
-            <a class="btn btn-outline-secondary" href="/account/totp">Authenticator app</a>
-            <a class="btn btn-outline-danger" href="/account/logout">Sign out</a>
-        </div>
+<section class="card h-100 min-h-0 overflow-hidden">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs px-3 pt-2" role="tablist" aria-label="Family account sections">
+            <li class="nav-item"><button class="nav-link @(_tab == Tab.Personal ? "active" : null)" @onclick="() => _tab = Tab.Personal"><i class="bi bi-person-vcard me-2"></i>Personal data</button></li>
+            @if (_isAdmin) { <li class="nav-item"><button class="nav-link @(_tab == Tab.Users ? "active" : null)" @onclick="() => _tab = Tab.Users"><i class="bi bi-people me-2"></i>Family Members</button></li> }
+            <li class="nav-item"><button class="nav-link @(_tab == Tab.Security ? "active" : null)" @onclick="() => _tab = Tab.Security"><i class="bi bi-shield-lock me-2"></i>Security</button></li>
+        </ul>
     </div>
-</section>
-
-<section class="card">
-    <div class="card-body">
-        <h2 class="h5">Users</h2>
-        @if (_users is null) { <p class="text-body-secondary mb-0">Loading users…</p> }
-        else { <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>User</th><th>Display name</th><th>Status</th><th>Authenticator</th></tr></thead><tbody>@foreach (var user in _users) { <tr><td>@user.UserName</td><td>@user.DisplayName</td><td>@(user.IsActive ? "Active" : "Inactive")</td><td>@(user.TwoFactorEnabled ? "Enabled" : "Not enabled")</td></tr> }</tbody></table></div> }
+    <div class="card-body overflow-y-auto">
+        @if (_tab == Tab.Personal)
+        {
+            <div class="row g-4"><div class="col-lg-6"><section class="card border h-100"><div class="card-body"><div class="d-flex align-items-start justify-content-between gap-3"><div><h2 class="h5 card-title">Your profile</h2><p class="text-body-secondary mb-0">This name appears in the account manager.</p></div><button class="btn btn-outline-secondary" @onclick="() => _editing = !_editing"><i class="bi bi-pencil me-2"></i>Edit profile</button></div><hr />@if (!string.IsNullOrEmpty(_message)) { <div class="alert alert-success" role="status">@_message</div> }@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger" role="alert">@_error</div> }@if (_editing) { <label class="form-label">Display name</label><input class="form-control" @bind="_displayName" /><div class="mt-3 d-flex gap-2"><button class="btn btn-secondary" @onclick="SaveAsync">Save name</button><button class="btn btn-outline-secondary" @onclick="() => _editing = false">Cancel</button></div> } else { <dl class="row mb-0"><dt class="col-sm-4 text-body-secondary">Display name</dt><dd class="col-sm-8">@_displayName</dd></dl> }</div></section></div><div class="col-lg-6"><section class="card border h-100"><div class="card-body d-flex flex-column align-items-start justify-content-between gap-3"><div><h2 class="h5 card-title mb-1">Sign out</h2><p class="text-body-secondary mb-0">End this session on this device.</p></div><button class="btn btn-outline-danger" @onclick="LogoutAsync"><i class="bi bi-box-arrow-right me-2"></i>Sign out</button></div></section></div></div>
+        }
+        else if (_tab == Tab.Users && _isAdmin)
+        {
+            <section><div class="d-flex align-items-center justify-content-between gap-3 mb-3"><div><h2 class="h5 card-title mb-1">Family Members</h2><p class="text-body-secondary mb-0">Accounts with access to PereneArchive.</p></div><div class="d-flex align-items-center gap-3"><span class="badge text-bg-secondary">@(_users?.Count ?? 0) total</span><button class="btn btn-primary" aria-expanded="@(_adding ? "true" : "false")" @onclick="() => _adding = !_adding"><i class="bi bi-person-plus me-2" aria-hidden="true"></i>Add member</button></div></div>@if (_adding) { <AddMemberPanel OnCreated="ReloadUsersAsync" OnClose="() => _adding = false" /> }@if (_users is null) { <p class="text-body-secondary">Loading family members…</p> } else { <div class="table-responsive"><table class="table align-middle"><thead><tr><th>User</th><th>Display name</th><th>Role</th><th>Status</th><th>Authenticator</th></tr></thead><tbody>@foreach (var user in _users) { <tr><td class="fw-semibold">@user.UserName</td><td>@user.DisplayName</td><td>@(user.IsAdmin ? "Administrator" : "Member")</td><td><span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@(user.IsActive ? "Active" : "Inactive")</span></td><td>@(user.TwoFactorEnabled ? "Enabled" : "Not enabled")</td></tr> }</tbody></table></div>}</section>
+        }
+        else
+        {
+            <div class="row g-4"><div class="col-lg-6"><PasswordCard /></div><div class="col-lg-6"><AuthenticatorCard /></div></div>
+        }
     </div>
 </section>
 
 @code {
-    private List<UserDto>? _users;
-    protected override async Task OnInitializedAsync() => _users = await Http.GetFromJsonAsync<List<UserDto>>("api/account/users");
-    private sealed class UserDto { public string? UserName { get; set; } public string? DisplayName { get; set; } public bool IsActive { get; set; } public bool TwoFactorEnabled { get; set; } }
+    private enum Tab { Personal, Users, Security }
+    private Tab _tab;
+    private IReadOnlyList<AccountUserDto>? _users;
+    private string _displayName = "";
+    private bool _editing, _isAdmin, _adding;
+    private string? _message, _error;
+    protected override async Task OnInitializedAsync()
+    {
+        try { _displayName = (await Accounts.GetMeAsync()).DisplayName; } catch (HttpRequestException) { _error = "Your profile could not be loaded."; }
+        _isAdmin = (await AuthState.GetAuthenticationStateAsync()).User.IsInRole("Admin");
+        if (_isAdmin) _users = await Accounts.GetUsersAsync();
+    }
+    private async Task ReloadUsersAsync() => _users = await Accounts.GetUsersAsync();
+    private async Task SaveAsync() => await RunAsync(async () => { await Accounts.PostAsync("api/account/preferences", new AccountPreferencesDto(_displayName)); _editing = false; _message = "Profile name saved."; });
+    private async Task LogoutAsync() { await RunAsync(() => Accounts.PostAsync("api/account/logout", new { })); Navigation.NavigateTo("/account/login", true); }
+    private async Task RunAsync(Func<Task> operation) { _error = _message = null; try { await operation(); } catch (HttpRequestException) { _error = "The request could not be completed. Check your details and try again."; } }
 }

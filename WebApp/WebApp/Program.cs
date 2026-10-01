@@ -41,7 +41,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager();
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.Cookie.HttpOnly = true;
@@ -243,7 +244,8 @@ using (var scope = app.Services.CreateScope())
     if (!await roleManager.RoleExistsAsync("Admin"))
         await roleManager.CreateAsync(new IdentityRole("Admin"));
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-    if (await userManager.FindByNameAsync("admin") is null)
+    var existingDefaultAdmin = await userManager.FindByNameAsync("admin");
+    if (existingDefaultAdmin is null)
     {
         var defaultAdmin = new ApplicationUser
         {
@@ -257,6 +259,12 @@ using (var scope = app.Services.CreateScope())
         if (!creation.Succeeded)
             throw new InvalidOperationException("Unable to create the configured initial administrator account.");
         await userManager.AddToRoleAsync(defaultAdmin, "Admin");
+    }
+    else if (existingDefaultAdmin.TwoFactorEnabled && await userManager.CheckPasswordAsync(existingDefaultAdmin, "admin"))
+    {
+        // Repair the original bootstrap account if it was enrolled before QR confirmation existed.
+        await userManager.SetTwoFactorEnabledAsync(existingDefaultAdmin, false);
+        await userManager.ResetAuthenticatorKeyAsync(existingDefaultAdmin);
     }
 }
 var configuredAllowedHosts = builder.Configuration["AllowedNetworkHosts:Hosts"]?
@@ -312,7 +320,7 @@ app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapStaticAssets();
+app.MapStaticAssets().AllowAnonymous();
 app.MapAccountEndpoints();
 app.MapVideoEndpoints();
 app.MapCutEndpoints();
