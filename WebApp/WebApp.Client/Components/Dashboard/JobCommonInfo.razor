@@ -1,0 +1,24 @@
+@* The details every job card shows, whatever its type, so cards read the same. Type-specific rows go in ChildContent. *@
+<dl class="row mb-0 small">
+    @if (!string.IsNullOrEmpty(StartedBy)) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Started by</dt><dd class="col-7 col-md-9 mb-2 text-break">@StartedBy</dd> }
+    @if (QueuedUtc is not null) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Queued</dt><dd class="col-7 col-md-9 mb-2">@Format(QueuedUtc)</dd> }
+    @if (StartedUtc is not null) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Started</dt><dd class="col-7 col-md-9 mb-2">@Format(StartedUtc)</dd> }
+    @if (FinishedUtc is not null) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Finished</dt><dd class="col-7 col-md-9 mb-2">@Format(FinishedUtc)</dd> }
+    @if (TotalTime is { } total) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Total time</dt><dd class="col-7 col-md-9 mb-2">@FormatDuration(total)</dd> }
+    @ChildContent
+    @if (!string.IsNullOrEmpty(Result)) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Result</dt><dd class="col-7 col-md-9 mb-0 text-break">@Result</dd> }
+</dl>
+
+@code {
+    [Parameter] public string? StartedBy { get; set; }
+    [Parameter] public DateTimeOffset? QueuedUtc { get; set; }
+    [Parameter] public DateTimeOffset? StartedUtc { get; set; }
+    [Parameter] public DateTimeOffset? FinishedUtc { get; set; }
+    [Parameter] public string? Result { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // Running time once finished: from when it started, or from when it was queued if it never started (for example, interrupted).
+    private TimeSpan? TotalTime => WebApp.Client.Models.JobListRules.TotalTime(QueuedUtc, StartedUtc, FinishedUtc);
+    private static string Format(DateTimeOffset? value) => value!.Value.ToLocalTime().ToString("g");
+    private static string FormatDuration(TimeSpan value) => value.TotalHours >= 1 ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}" : $"{value.Minutes}:{value.Seconds:00}";
+}

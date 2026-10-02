@@ -3,12 +3,16 @@ using WebApp.Services;
 
 namespace WebApp.Tests.Services;
 
-public sealed class CompositionJobStatusStoreTests
+public sealed class CompositionJobStatusStoreTests : IDisposable
 {
+    private readonly JobTestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
     [Fact]
     public void Seeded_job_starts_pending_and_transitions_through_processing_to_completed()
     {
-        var store = new CompositionJobStatusStore();
+        var store = _db.Composition;
         store.Seed("job-1");
 
         Assert.Equal(CompositionJobState.Pending, Assert.Single(store.GetAll()).State);
@@ -25,7 +29,7 @@ public sealed class CompositionJobStatusStoreTests
     [Fact]
     public void Failed_job_records_diagnostic()
     {
-        var store = new CompositionJobStatusStore();
+        var store = _db.Composition;
         store.Seed("job-1");
 
         store.MarkFailed("job-1", "ffmpeg exploded");
@@ -38,7 +42,7 @@ public sealed class CompositionJobStatusStoreTests
     [Fact]
     public void Jobs_are_returned_in_the_order_they_were_seeded()
     {
-        var store = new CompositionJobStatusStore();
+        var store = _db.Composition;
         store.Seed("first");
         store.Seed("second");
         store.Seed("third");

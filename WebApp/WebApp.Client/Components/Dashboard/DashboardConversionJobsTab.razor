@@ -2,37 +2,56 @@
 @using WebApp.Client.Models
 @implements IAsyncDisposable
 
-@if (_jobs.Count == 0)
+@if (_rows.Count == 0)
 {
-    <div class="h-100 d-flex flex-column align-items-center justify-content-center text-center text-body-secondary py-5"><i class="bi bi-arrow-repeat display-6 mb-3" aria-hidden="true"></i><p class="mb-0">No conversion jobs have been submitted during this application session.</p></div>
+    <div class="h-100 d-flex flex-column align-items-center justify-content-center text-center text-body-secondary py-5"><i class="bi bi-list-task display-6 mb-3" aria-hidden="true"></i><p class="mb-0">No jobs have been recorded yet.</p></div>
 }
 else
 {
-    <section aria-label="Conversion jobs">
-        <div class="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap"><div><h1 class="h4 mb-1">Conversion jobs</h1><p class="text-body-secondary mb-0">@_jobs.Count job@(_jobs.Count == 1 ? string.Empty : "s") submitted in this application session.</p></div><button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" type="button" @onclick="RefreshAsync"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>Refresh jobs</button></div>
-        @if (_controlError is not null) { <div class="alert alert-warning" role="alert">@_controlError</div> }
-        <div class="row row-cols-1 row-cols-md-2 row-cols-xxl-3 g-3">
-            @foreach (var job in _jobs)
+    <section class="d-flex flex-column h-100 min-h-0" aria-label="Jobs">
+        <div class="flex-shrink-0">
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap"><div><h1 class="h4 mb-1">Jobs</h1><p class="text-body-secondary mb-0">@_rows.Count job@(_rows.Count == 1 ? string.Empty : "s") recorded.</p></div><button class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" type="button" @onclick="RefreshAsync"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>Refresh jobs</button></div>
+            <div class="btn-group flex-wrap mb-3" role="group" aria-label="Filter jobs by type">
+                @foreach (var (key, label) in JobListRules.Filters)
+                {
+                    <button type="button" class="btn btn-sm @(_filter == key ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@(_filter == key ? "true" : "false")" @onclick="@(() => SetFilter(key))">@label <span class="badge text-bg-light ms-1">@JobListRules.CountFor(_rows, key)</span></button>
+                }
+            </div>
+            @if (_controlError is not null) { <div class="alert alert-warning" role="alert">@_controlError</div> }
+        </div>
+        <div class="flex-grow-1 min-h-0 overflow-y-auto">
+            @if (_visible.Count == 0)
             {
-                var progress = ProgressPercent(job);
-                var progressValue = (int)Math.Round(progress, MidpointRounding.AwayFromZero);
-                <div class="col" @key="job.JobId"><article class="card h-100 shadow-sm"><div class="card-body d-flex flex-column gap-3">
-                    <div class="d-flex align-items-start justify-content-between gap-3"><div class="flex-grow-1"><p class="text-body-secondary text-uppercase small fw-semibold mb-1">Source</p><h2 class="h6 text-break mb-0">@job.SourceName</h2></div><span class="badge @Badge(job.State) flex-shrink-0">@if (IsActive(job) && job.State != VideoConversionJobState.Paused) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }@job.State</span></div>
-                    @if (IsActive(job))
+                <p class="text-body-secondary">No jobs of this type.</p>
+            }
+            else
+            {
+                <ul class="list-group mb-3">
+                    @foreach (var row in _page)
                     {
-                        <div><div class="d-flex justify-content-between small mb-1"><span>@ProgressLabel(job)</span><strong>@progressValue%</strong></div><div class="progress" role="progressbar" aria-label="Conversion progress for @job.SourceName" aria-valuenow="@progressValue" aria-valuemin="0" aria-valuemax="100" style="height: .65rem;"><div class="progress-bar progress-bar-striped @(job.State == VideoConversionJobState.Paused ? string.Empty : "progress-bar-animated")" style="@ProgressStyle(progressValue)"></div></div><div class="d-flex flex-wrap gap-3 small text-body-secondary mt-2"><span>Started @FormatStart(job.StartedAtUtc)</span><span>Elapsed @FormatElapsed(job.StartedAtUtc, null)</span>@if (Remaining(job) is { } remaining) { <span>About @FormatDuration(remaining) remaining</span> }</div></div>
+                        <JobRow @key="row.Id" Row="row" Expanded="_expanded.Contains(row.Id)" Busy="@(_controlBusyJobId is not null)" OnToggle="Toggle" OnPause="TogglePauseAsync" OnStop="@(r => { _stopConfirmation = r.Conversion; return Task.CompletedTask; })" OnRetry="RetryAsync" />
                     }
-                    @if (job.State is VideoConversionJobState.Processing or VideoConversionJobState.Paused)
-                    {
-                        <div class="d-flex flex-wrap gap-2" aria-label="Controls for @job.SourceName">
-                            <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-2" style="min-height:40px" type="button" disabled="@(_controlBusyJobId is not null)" @onclick="@(() => TogglePauseAsync(job))"><i class="bi @(job.State == VideoConversionJobState.Paused ? "bi-play-fill" : "bi-pause-fill")" aria-hidden="true"></i>@(job.State == VideoConversionJobState.Paused ? "Resume" : "Pause")</button>
-                            <button class="btn btn-danger d-inline-flex align-items-center justify-content-center gap-2" style="min-height:40px" type="button" disabled="@(_controlBusyJobId is not null)" @onclick="() => _stopConfirmation = job"><i class="bi bi-stop-fill" aria-hidden="true"></i>Stop</button>
-                        </div>
-                    }
-                    <dl class="row mb-0 small"><dt class="col-5 text-body-secondary fw-normal">Profile</dt><dd class="col-7 mb-2">@(job.ProfileLabel ?? job.Action)</dd>@if (job.EstimatedSizeBytes is not null) { <dt class="col-5 text-body-secondary fw-normal">Estimated size</dt><dd class="col-7 mb-2">@FormatSize(job.EstimatedSizeBytes.Value)</dd> }<dt class="col-5 text-body-secondary fw-normal">Source size</dt><dd class="col-7 mb-2">@(job.SourceSizeBytes is null ? "Unknown" : FormatSize(job.SourceSizeBytes.Value))</dd>@if (!IsActive(job)) { <dt class="col-5 text-body-secondary fw-normal">Result</dt><dd class="col-7 mb-0 text-break">@Outcome(job)@if (job.StartedAtUtc is not null && job.FinishedAtUtc is not null) { <span class="text-body-secondary"> · Total time @FormatElapsed(job.StartedAtUtc, job.FinishedAtUtc)</span> }</dd> }</dl>
-                </div></article></div>
+                </ul>
             }
         </div>
+        @if (_visible.Count > JobListRules.PageSizes.Min())
+        {
+            <nav class="flex-shrink-0 d-flex align-items-center flex-wrap gap-3 pt-2" aria-label="Jobs pages">
+                @if (_pageCount > 1)
+                {
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item @(_pageNumber == 1 ? "disabled" : null)"><button class="page-link" type="button" aria-label="Previous page" disabled="@(_pageNumber == 1)" @onclick="@(() => GoTo(_pageNumber - 1))"><i class="bi bi-chevron-left" aria-hidden="true"></i></button></li>
+                        @foreach (var number in JobListRules.PageWindow(_pageNumber, _visible.Count, _pageSize))
+                        {
+                            <li class="page-item @(number == _pageNumber ? "active" : null)"><button class="page-link" type="button" aria-label="Page @number" aria-current="@(number == _pageNumber ? "page" : null)" @onclick="@(() => GoTo(number))">@number</button></li>
+                        }
+                        <li class="page-item @(_pageNumber == _pageCount ? "disabled" : null)"><button class="page-link" type="button" aria-label="Next page" disabled="@(_pageNumber == _pageCount)" @onclick="@(() => GoTo(_pageNumber + 1))"><i class="bi bi-chevron-right" aria-hidden="true"></i></button></li>
+                    </ul>
+                }
+                <div class="d-flex align-items-center gap-2"><label class="small text-body-secondary mb-0" for="jobs-page-size">Per page</label><select id="jobs-page-size" class="form-select form-select-sm w-auto" value="@_pageSize" @onchange="SetPageSize">@foreach (var size in JobListRules.PageSizes) { <option value="@size" selected="@(size == _pageSize)">@size</option> }</select></div>
+                <span class="small text-body-secondary">@((_pageNumber - 1) * _pageSize + 1)–@(Math.Min(_pageNumber * _pageSize, _visible.Count)) of @_visible.Count</span>
+            </nav>
+        }
     </section>
 }
 
@@ -44,29 +63,68 @@ else
 }
 
 @code {
-    private List<VideoConversionJobDto> _jobs = [];
+    private IReadOnlyList<JobRowModel> _rows = [];
+    private IReadOnlyList<JobRowModel> _visible = [];
+    private IReadOnlyList<JobRowModel> _page = [];
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private string _filter = "all";
+    private int _pageNumber = 1;
+    private int _pageSize = JobListRules.DefaultPageSize;
+    private int _pageCount = 1;
     private CancellationTokenSource? _pollingCts;
     private VideoConversionJobDto? _stopConfirmation;
     private string? _controlBusyJobId;
     private string? _controlError;
+
     protected override async Task OnInitializedAsync() => await RefreshAsync();
-    public async Task RefreshAsync() { try { _jobs = await Http.GetFromJsonAsync<List<VideoConversionJobDto>>("api/dashboard/jobs") ?? []; } catch (HttpRequestException) { _jobs = []; } UpdatePolling(); }
-    private void UpdatePolling() { if (_jobs.Any(IsActive)) { if (_pollingCts is null) { _pollingCts = new(); _ = PollAsync(_pollingCts.Token); } return; } _pollingCts?.Cancel(); _pollingCts = null; }
-    private async Task PollAsync(CancellationToken token) { try { using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2)); while (await timer.WaitForNextTickAsync(token)) { await RefreshAsync(); await InvokeAsync(StateHasChanged); if (!_jobs.Any(IsActive)) break; } } catch (OperationCanceledException) { } }
-    private static bool IsActive(VideoConversionJobDto job) => job.State is VideoConversionJobState.Pending or VideoConversionJobState.Processing or VideoConversionJobState.Paused or VideoConversionJobState.Finalizing;
-    private static double ProgressPercent(VideoConversionJobDto job) => job.State == VideoConversionJobState.Completed ? 100 : job.State == VideoConversionJobState.Finalizing ? 99 : job.SourceDurationSeconds is > 0 && job.ProcessedDurationSeconds is not null ? Math.Min(99, Math.Max(0, job.ProcessedDurationSeconds.Value / job.SourceDurationSeconds.Value * 100)) : 0;
-    private static string ProgressStyle(int percent) => $"width: {percent}%; flex: 0 0 {percent}%;";
-    private static TimeSpan? Remaining(VideoConversionJobDto job) => job.State == VideoConversionJobState.Processing && job.SourceDurationSeconds is > 0 && job.ProcessedDurationSeconds is not null && job.Speed is > 0 ? TimeSpan.FromSeconds(Math.Max(0, job.SourceDurationSeconds.Value - job.ProcessedDurationSeconds.Value) / job.Speed.Value) : null;
-    private static string ProgressLabel(VideoConversionJobDto job) => job.State == VideoConversionJobState.Paused ? "Paused — resume later in this application session" : job.State == VideoConversionJobState.Pending ? "Queued" : job.State == VideoConversionJobState.Finalizing ? "Validating and publishing output" : job.ProcessedDurationSeconds is not null && job.SourceDurationSeconds is not null ? $"{FormatDuration(TimeSpan.FromSeconds(job.ProcessedDurationSeconds.Value))} of {FormatDuration(TimeSpan.FromSeconds(job.SourceDurationSeconds.Value))}" : "Preparing conversion";
-    private static string Badge(VideoConversionJobState s) => s switch { VideoConversionJobState.Completed => "text-bg-success", VideoConversionJobState.Failed => "text-bg-danger", VideoConversionJobState.Stopped => "text-bg-secondary", VideoConversionJobState.Skipped => "text-bg-secondary", VideoConversionJobState.Paused => "text-bg-warning", VideoConversionJobState.Finalizing => "text-bg-info", _ => "text-bg-primary" };
-    private static string FormatSize(long bytes) => $"{bytes / 1024d / 1024d:0.0} MB";
-    private static string FormatDuration(TimeSpan value) => value.TotalHours >= 1 ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}" : $"{value.Minutes}:{value.Seconds:00}";
-    private static string FormatStart(DateTimeOffset? value) => value is null ? "—" : value.Value.ToLocalTime().ToString("t");
-    private static string FormatElapsed(DateTimeOffset? start, DateTimeOffset? end) => start is null ? "—" : FormatDuration((end ?? DateTimeOffset.UtcNow) - start.Value);
-    private static string Outcome(VideoConversionJobDto job) => job.OutputSizeBytes is not null ? FormatSize(job.OutputSizeBytes.Value) : job.Diagnostic ?? "Waiting to start.";
-    private Task TogglePauseAsync(VideoConversionJobDto job) => ControlAsync(job, job.State == VideoConversionJobState.Paused ? "resume" : "pause");
-    private async Task ControlAsync(VideoConversionJobDto job, string action) { _controlBusyJobId = job.JobId; _controlError = null; try { using var response = await Http.PostAsync($"api/dashboard/jobs/{job.JobId}/{action}", null); if (!response.IsSuccessStatusCode) _controlError = "This conversion changed state before the request completed."; } catch (HttpRequestException) { _controlError = "The conversion control request could not be completed."; } finally { _controlBusyJobId = null; await RefreshAsync(); } }
+
+    public async Task RefreshAsync()
+    {
+        IReadOnlyList<VideoConversionJobDto> conversions = [];
+        IReadOnlyList<JobSummaryDto> others = [];
+        try { conversions = await Http.GetFromJsonAsync<List<VideoConversionJobDto>>("api/dashboard/jobs") ?? []; } catch (HttpRequestException) { }
+        try { others = await Http.GetFromJsonAsync<List<JobSummaryDto>>("api/dashboard/jobs/activity") ?? []; } catch (HttpRequestException) { }
+        _rows = JobListRules.Order(JobListRules.Build(conversions, others));
+        Recompute();
+        UpdatePolling();
+    }
+
+    // Filtering, paging and the open-details set are derived from the latest rows, so a refresh never closes a panel you opened.
+    private void Recompute()
+    {
+        _visible = _rows.Where(row => JobListRules.Matches(row, _filter)).ToList();
+        _pageNumber = JobListRules.ClampPage(_pageNumber, _visible.Count, _pageSize);
+        _pageCount = JobListRules.PageCount(_visible.Count, _pageSize);
+        _page = JobListRules.Page(_visible, _pageNumber, _pageSize);
+        _expanded.IntersectWith(_rows.Select(row => row.Id));
+    }
+
+    private void SetFilter(string key) { _filter = key; _pageNumber = 1; Recompute(); }
+    private void SetPageSize(ChangeEventArgs e) { _pageSize = JobListRules.NormalizePageSize(int.TryParse(e.Value?.ToString(), out var size) ? size : JobListRules.DefaultPageSize); _pageNumber = 1; Recompute(); }
+    private void GoTo(int page) { _pageNumber = page; Recompute(); }
+    private void Toggle(string id) { if (!_expanded.Remove(id)) _expanded.Add(id); }
+
+    private void UpdatePolling() { if (_rows.Any(row => row.IsActive)) { if (_pollingCts is null) { _pollingCts = new(); _ = PollAsync(_pollingCts.Token); } return; } _pollingCts?.Cancel(); _pollingCts = null; }
+    private async Task PollAsync(CancellationToken token) { try { using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2)); while (await timer.WaitForNextTickAsync(token)) { await RefreshAsync(); await InvokeAsync(StateHasChanged); if (!_rows.Any(row => row.IsActive)) break; } } catch (OperationCanceledException) { } }
+
+    private Task TogglePauseAsync(JobRowModel row) => ControlAsync(row.Id, row.State == "Paused" ? "resume" : "pause", "This conversion changed state before the request completed.");
+    private async Task RetryAsync(JobRowModel row) => await ControlAsync(row.Id, "retry", "This conversion could not be retried.", readServerError: true);
     private void CancelStop() => _stopConfirmation = null;
-    private async Task ConfirmStopAsync() { if (_stopConfirmation is not { } job) return; _stopConfirmation = null; await ControlAsync(job, "stop"); }
+    private async Task ConfirmStopAsync() { if (_stopConfirmation is not { } job) return; _stopConfirmation = null; await ControlAsync(job.JobId, "stop", "This conversion changed state before the request completed."); }
+
+    private async Task ControlAsync(string jobId, string action, string failureMessage, bool readServerError = false)
+    {
+        _controlBusyJobId = jobId; _controlError = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/dashboard/jobs/{jobId}/{action}", null);
+            if (!response.IsSuccessStatusCode) _controlError = (readServerError ? await ReadErrorAsync(response) : null) ?? failureMessage;
+        }
+        catch (HttpRequestException) { _controlError = "The request could not be completed."; }
+        finally { _controlBusyJobId = null; await RefreshAsync(); }
+    }
+
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage response) { try { return (await response.Content.ReadFromJsonAsync<Dictionary<string, string>>())?.GetValueOrDefault("error"); } catch (Exception e) when (e is System.Text.Json.JsonException or NotSupportedException) { return null; } }
+
     public ValueTask DisposeAsync() { _pollingCts?.Cancel(); _pollingCts?.Dispose(); return ValueTask.CompletedTask; }
 }

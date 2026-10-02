@@ -38,7 +38,7 @@ public sealed class CutNamingServiceTests
     }
 
     private static CutNamingService CreateService(string path) =>
-        new(Options.Create(new VideoCutOptions { Path = path }));
+        new(Options.Create(new VideoCutOptions { Path = path }), JobTestDb.Shared.Counters);
 
     private sealed class TemporaryDirectory : IDisposable
     {

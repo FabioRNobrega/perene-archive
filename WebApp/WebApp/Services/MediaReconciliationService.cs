@@ -25,15 +25,18 @@ internal sealed class MediaReconciliationService(AppDbContext db, MediaItemRepos
 {
     private readonly Dictionary<string, long> _rootIds = new(StringComparer.Ordinal);
 
-    public MediaFile? Describe(ArchiveItemEntry entry)
+    public MediaFile? Describe(ArchiveItemEntry entry) =>
+        entry.Kind != ArchiveItemKind.File ? null : DescribeFile(entry.PhysicalPath, MediaFile.CategoryOf(entry));
+
+    /// <summary>Describes any file under a known root (library, archive, cut or composition output) by its server-side facts.</summary>
+    public MediaFile? DescribeFile(string physicalPath, string category)
     {
-        if (entry.Kind != ArchiveItemKind.File) return null;
-        var container = locator.LocateContainer(entry.PhysicalPath);
+        var container = locator.LocateContainer(physicalPath);
         if (container is null) return null;
-        var info = new FileInfo(entry.PhysicalPath);
+        var info = new FileInfo(physicalPath);
         if (!info.Exists) return null;
         var file = container.Child(info.Name);
-        return new MediaFile(file.RootKey, file.RelativePath, info.FullName, info.Length, info.LastWriteTimeUtc, MediaFile.CategoryOf(entry));
+        return new MediaFile(file.RootKey, file.RelativePath, info.FullName, info.Length, info.LastWriteTimeUtc, category);
     }
 
     /// <summary>The Active item for a file, created on first sight and reclassified when its bytes changed.</summary>

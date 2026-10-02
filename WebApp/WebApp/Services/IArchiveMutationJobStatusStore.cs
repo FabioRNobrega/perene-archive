@@ -4,7 +4,7 @@ namespace WebApp.Services;
 
 internal interface IArchiveMutationJobStatusStore
 {
-    void Seed(ArchiveMutationJob job);
+    void Seed(ArchiveMutationJob job, string? payloadJson = null);
 
     void MarkProcessing(string jobId);
 

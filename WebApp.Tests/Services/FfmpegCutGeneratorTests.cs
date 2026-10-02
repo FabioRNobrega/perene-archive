@@ -60,7 +60,7 @@ public sealed class FfmpegCutGeneratorTests
         new(
             Options.Create(new VideoLibraryOptions { Path = videoRoot }),
             Options.Create(new VideoCutOptions { Path = cutRoot }),
-            new CutNamingService(Options.Create(new VideoCutOptions { Path = cutRoot })));
+            new CutNamingService(Options.Create(new VideoCutOptions { Path = cutRoot }), JobTestDb.Shared.Counters));
 
     private static VideoFileEntry CreateEntry(string physicalPath)
     {

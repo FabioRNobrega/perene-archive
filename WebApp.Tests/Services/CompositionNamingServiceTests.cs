@@ -39,7 +39,7 @@ public sealed class CompositionNamingServiceTests
     }
 
     private static CompositionNamingService CreateService(string path) =>
-        new(Options.Create(new VideoCompositionOptions { Path = path }));
+        new(Options.Create(new VideoCompositionOptions { Path = path }), JobTestDb.Shared.Counters);
 
     private sealed class TemporaryDirectory : IDisposable
     {

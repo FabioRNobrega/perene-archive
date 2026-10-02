@@ -6,7 +6,7 @@ Extend P1's EF Core model and P2's `IFolderAccessService` with media identity an
 
 ## Technical Approach
 
-`MediaItemRepository`, `MediaIdentityClassifier`, `MediaFingerprint`, and `MediaReconciliationService` own provider-specific persistence and identity decisions. `SqliteEpubNoteService`, `SqliteEpubHighlightService`, `SqliteEpubProgressService`, `SqliteComicProgressService`, `SqliteArchiveFavoritesService`, `SqliteReaderThemeService`, and `SqliteCustomStorageViewService` are registered scoped (they need the scoped `AppDbContext`), resolve user identity from the server principal, and validate folder Read via `IFolderAccessService.CanReadAsync` using the item's `FolderId` mapped to a `FolderLocation` through `GetTreeAsync()`. Interfaces stay except where a method took unstable size/timestamp metadata (progress), which now takes the opaque item ID.
+`MediaItemRepository`, `MediaIdentityClassifier`, `MediaFingerprint`, and `MediaReconciliationService` own provider-specific persistence and identity decisions. `SqliteEpubNoteService`, `SqliteEpubHighlightService`, `SqliteEpubProgressService`, `SqliteComicProgressService`, `SqliteArchiveFavoritesService`, `SqliteReaderThemeService`, and `SqliteCustomStorageViewService` are registered scoped (they need the scoped `AppDbContext`), resolve user identity from the server principal, and validate folder Read via `IFolderAccessService.CanReadAsync` through `IUserMediaContext` (opaque item ID → current-snapshot entry → `FolderLocator.LocateContainer` → `CanReadAsync` → `MediaReconciliationService.EnsureAsync`; an unreadable item is reported as not found). Interfaces stay except where a method took unstable size/timestamp metadata (progress), which now takes the opaque item ID.
 
 The legacy JSON/text services are removed outright; nothing reads or migrates their files (the app is not in production). `MediaReconciliationService.ReconcileAsync` is exposed through one Admin endpoint (Admin policy plus `AntiforgeryEndpointFilter`) and returns counts only.
 
@@ -15,7 +15,7 @@ The legacy JSON/text services are removed outright; nothing reads or migrates th
 **Existing files to modify:**
 
 - `Data/AppDbContext.cs` and a new migration after `AddFolderAccessControl` — media/per-user entities, indexes, and relationships.
-- `Services/{EpubNote,EpubHighlight,EpubProgress,ComicProgress,ArchiveFavorites,CustomStorageView}Service.cs` and `Program.cs` — replace legacy implementations/DI after import.
+- `Services/{EpubNote,EpubHighlight,EpubProgress,ComicProgress,ArchiveFavorites,CustomStorageView}Service.cs` and `Program.cs` — replace legacy implementations/DI (no importer).
 - `Endpoints/ArchiveEndpoints.cs`, `DashboardEndpoints.cs`, and reader components — current-user scoped requests without changing opaque browser media IDs; per-user routes keep the P2 `RequireFolderAccess(read)` rule (401/404) and add row ownership.
 - `Endpoints/MediaAdminEndpoints.cs` — the Admin reconcile route.
 
@@ -40,15 +40,17 @@ The legacy JSON/text services are removed outright; nothing reads or migrates th
 
 ```mermaid
 sequenceDiagram
-  participant Scan as ArchiveService scan
-  participant R as MediaReconciliationService
-  participant DB as MediaItemRepository
   participant Reader as EpubReader
   participant Data as SqliteEpubNoteService
-  Scan->>R: snapshot entry
-  R->>DB: classify/relink active media identity
+  participant C as UserMediaContext
+  participant R as MediaReconciliationService
+  participant DB as MediaItemRepository
   Reader->>Data: save note via opaque item ID
-  Data->>DB: resolve user + media, require folder Read
+  Data->>C: RequireAsync(category, itemId)
+  C->>C: current user + folder Read (else 404)
+  C->>R: EnsureAsync(file)
+  R->>DB: find/create Active row, classify same-path change
+  Note over R,DB: Admin POST /api/admin/media/reconcile runs the fingerprint scan separately
 ```
 
 ## Risks and Validation Focus

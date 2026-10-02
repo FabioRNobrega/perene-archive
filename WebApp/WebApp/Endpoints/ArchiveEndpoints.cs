@@ -116,20 +116,37 @@ internal static class ArchiveEndpoints
             : Results.Ok(ToPlanDto(item, media, profile!, catalog, options.Value));
     }
 
-    private static async Task<IResult> CreateConversionAsync(HttpContext http, JobOwnerRegistry owners, string category, string id, VideoConversionSelectionDto selection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateConversionAsync(HttpContext http, IJobVisibility owners, string category, string id, VideoConversionSelectionDto selection, IArchiveService archive, IVideoConversionProbe probe, ConversionProfileCatalog catalog, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken)
     {
         if (!archive.TryResolveConvertibleVideo(category, id, out var item) || item is null) return Results.BadRequest(new { error = "This file cannot be converted." });
+        return await QueueConversionAsync(http, item, selection, probe, resolver, queue, statuses, cancellationToken);
+    }
+
+    /// <summary>Probes, resolves the profile and queues a conversion for a resolved source; shared by create and retry.</summary>
+    internal static async Task<IResult> QueueConversionAsync(HttpContext http, ArchiveItemEntry item, VideoConversionSelectionDto selection, IVideoConversionProbe probe, ConversionProfileResolver resolver, IVideoConversionJobQueue queue, IVideoConversionJobStatusStore statuses, CancellationToken cancellationToken, bool checkAccess = false, string? restartJobId = null)
+    {
         if (statuses.HasActiveSource(item.Id)) return Results.Conflict(new { error = "A conversion is already active for this file." });
         var media = await probe.ProbeAsync(item.PhysicalPath, cancellationToken);
         if (media is null) return Results.BadRequest(new { error = "The selected file is not a readable video." });
         var serverSelection = new VideoConversionSelection(selection.Mode, selection.OutputHeight, selection.QualityPreset, selection.TargetSizeBytes, selection.SelectedSubtitleStreamIndex, selection.BurnClosedCaptions);
         if (!resolver.TryResolve(media, item.SizeBytes, serverSelection, out var profile, out var error)) return Results.BadRequest(new { error });
         var userId = ArchiveListingAccess.UserId(http);
-        var job = new VideoConversionJob(Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile, userId);
-        owners.Set(job.JobId, userId);
-        statuses.Seed(job);
+        var job = new VideoConversionJob(restartJobId ?? Guid.NewGuid().ToString("N"), item, profile!.Action, media, profile, userId);
+        // Retry has no item in its route, so the route-level folder rule cannot run; check Read/Create on the source folder here.
+        if (checkAccess && !await http.RequestServices.GetRequiredService<IFolderJobAuthorizer>().CanRunAsync(job, cancellationToken))
+            return Results.NotFound();
+        var payload = await http.RequestServices.GetRequiredService<JobEnqueueService>().BuildConversionPayloadAsync(job, selection, cancellationToken);
+        // A retry resets the existing Failed/Stopped job in place (same id, same card); a new conversion seeds a fresh one.
+        if (restartJobId is not null)
+        {
+            if (!statuses.Restart(job, payload)) return Results.Conflict(new { error = "Only a failed or stopped conversion can be retried." });
+            if (!queue.TryEnqueue(job)) { statuses.Fail(job.JobId, "The conversion queue is full. Try again shortly."); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.Get(job.JobId)!));
+        }
+
+        statuses.Seed(job, payload);
         if (!queue.TryEnqueue(job)) { statuses.Remove(job.JobId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-        return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.GetAll().Single(x => x.JobId == job.JobId)));
+        return Results.Accepted($"/api/dashboard/jobs/{job.JobId}", DashboardEndpoints.ToConversionDto(statuses.Get(job.JobId)!));
     }
 
     private static VideoConversionPlanDto ToPlanDto(ArchiveItemEntry item, VideoConversionProbeResult media, ResolvedVideoConversionProfile profile, ConversionProfileCatalog catalog, VideoConversionOptions options) => new(
@@ -433,9 +450,9 @@ internal static class ArchiveEndpoints
             cancellationToken);
         });
 
-    private static IResult Move(
+    private static Task<IResult> Move(
         HttpContext http,
-        JobOwnerRegistry owners,
+        IJobVisibility owners,
         string category,
         string id,
         MoveArchiveItemRequest request,
@@ -444,9 +461,9 @@ internal static class ArchiveEndpoints
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(http, () => archive.Move(category, id, request.DestinationCategory, request.DestinationFolderId), queue, statuses, owners);
 
-    private static IResult BatchMove(
+    private static Task<IResult> BatchMove(
         HttpContext http,
-        JobOwnerRegistry owners,
+        IJobVisibility owners,
         string category,
         BatchMoveArchiveItemsRequest request,
         IArchiveService archive,
@@ -454,9 +471,9 @@ internal static class ArchiveEndpoints
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(http, () => archive.BatchMove(category, request.ItemIds, request.DestinationCategory, request.DestinationFolderId), queue, statuses, owners);
 
-    private static IResult BatchMoveToTrash(
+    private static Task<IResult> BatchMoveToTrash(
         HttpContext http,
-        JobOwnerRegistry owners,
+        IJobVisibility owners,
         string category,
         BatchMoveToTrashArchiveItemsRequest request,
         IArchiveService archive,
@@ -464,9 +481,9 @@ internal static class ArchiveEndpoints
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(http, () => archive.BatchMoveToTrash(category, request.ItemIds), queue, statuses, owners);
 
-    private static IResult MoveToTrash(
+    private static Task<IResult> MoveToTrash(
         HttpContext http,
-        JobOwnerRegistry owners,
+        IJobVisibility owners,
         string category,
         string id,
         IArchiveService archive,
@@ -474,16 +491,16 @@ internal static class ArchiveEndpoints
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(http, () => archive.MoveToTrash(category, id), queue, statuses, owners);
 
-    private static IResult EmptyTrash(
+    private static Task<IResult> EmptyTrash(
         HttpContext http,
-        JobOwnerRegistry owners,
+        IJobVisibility owners,
         string category,
         IArchiveService archive,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses) =>
         EnqueueMutation(http, () => archive.EmptyTrash(category), queue, statuses, owners);
 
-    private static async Task<IResult> GetJobs(HttpContext http, IArchiveMutationJobStatusStore statuses, JobOwnerRegistry owners)
+    private static async Task<IResult> GetJobs(HttpContext http, IArchiveMutationJobStatusStore statuses, IJobVisibility owners)
     {
         // Job labels carry item names, so a member only sees the jobs they started; Admins see all.
         var isAdmin = await ArchiveListingAccess.IsAdminAsync(http);
@@ -491,19 +508,19 @@ internal static class ArchiveEndpoints
         return Results.Ok(statuses.GetAll().Where(status => owners.IsVisibleTo(status.JobId, userId, isAdmin)).Select(ToMutationDto).ToList());
     }
 
-    private static IResult EnqueueMutation(
+    private static async Task<IResult> EnqueueMutation(
         HttpContext http,
         Func<ArchiveMutationJob> action,
         IArchiveMutationJobQueue queue,
         IArchiveMutationJobStatusStore statuses,
-        JobOwnerRegistry owners)
+        IJobVisibility owners)
     {
         try
         {
             var userId = ArchiveListingAccess.UserId(http);
             var job = action() with { ActorUserId = userId };
-            owners.Set(job.JobId, userId);
-            statuses.Seed(job);
+            var payload = await http.RequestServices.GetRequiredService<JobEnqueueService>().BuildMutationPayloadAsync(job, http.RequestAborted);
+            statuses.Seed(job, payload);
             if (!queue.TryEnqueue(job))
             {
                 return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);

@@ -21,6 +21,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ReaderTheme> ReaderThemes => Set<ReaderTheme>();
     public DbSet<ReaderThemePreference> ReaderThemePreferences => Set<ReaderThemePreference>();
     public DbSet<CustomStorageView> CustomStorageViews => Set<CustomStorageView>();
+    public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<NamingCounter> NamingCounters => Set<NamingCounter>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -72,6 +74,37 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.ToTable(table => table.HasCheckConstraint("CK_AccessPolicies_Singleton", "\"Id\" = 1"));
         });
         ConfigureMedia(builder);
+        ConfigureJobs(builder);
+    }
+
+    private static void ConfigureJobs(ModelBuilder builder)
+    {
+        builder.Entity<Job>(entity =>
+        {
+            entity.HasKey(job => job.Id);
+            entity.Property(job => job.Id).HasMaxLength(64);
+            entity.Property(job => job.Type).HasConversion<string>().HasMaxLength(24);
+            entity.Property(job => job.State).HasMaxLength(24);
+            // Stored as sortable binary so the polling queries can order by time in SQL.
+            entity.Property(job => job.CreatedUtc).HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+            entity.Property(job => job.UpdatedUtc).HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+            entity.Property(job => job.StartedUtc).HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+            entity.Property(job => job.FinishedUtc).HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+            entity.HasIndex(job => new { job.Type, job.State });
+            entity.HasIndex(job => new { job.Type, job.CreatedUtc });
+            entity.HasIndex(job => job.UserId);
+            // A deleted account keeps its job history, but the row no longer claims an owner.
+            entity.HasOne(job => job.User).WithMany().HasForeignKey(job => job.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+        builder.Entity<NamingCounter>(entity =>
+        {
+            entity.HasKey(counter => counter.Id);
+            entity.Property(counter => counter.Kind).HasMaxLength(32);
+            entity.Property(counter => counter.Directory).HasMaxLength(2048);
+            entity.Property(counter => counter.Prefix).HasMaxLength(512);
+            entity.Property(counter => counter.Extension).HasMaxLength(16);
+            entity.HasIndex(counter => new { counter.Kind, counter.Directory, counter.Prefix, counter.Extension }).IsUnique();
+        });
     }
 
     private static void ConfigureMedia(ModelBuilder builder)

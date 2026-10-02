@@ -25,6 +25,7 @@ Table of contents
 
 ## Current Supported Features
 
+| Durable background jobs | Conversion, composition, cut and archive move/trash jobs are recorded in the database, so a job's last status survives a restart (unfinished jobs show as interrupted and are never replayed). The Jobs page lists every job type (conversions, compositions, moves and trash, cuts) with a type filter; members see only the jobs they started, Admins see all, and each job shows who started it. A Failed or Stopped conversion (including one interrupted by a restart) has a Retry button that queues it again with the same settings. Output names (`<name> 0001.mp4`, `Composition 0001`, `Converted 0001`, image crops) come from atomic counters that never reuse a number, even after files are deleted. |
 | Archive favorites | Mark an individual archive file or folder from its actions menu. Favorites are per signed-in user and appear first in the default sort; explicit sorts keep their ordinary order. |
 
 | Area | Status | Supported capabilities and formats |

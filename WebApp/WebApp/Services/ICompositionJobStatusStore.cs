@@ -4,7 +4,8 @@ namespace WebApp.Services;
 
 internal interface ICompositionJobStatusStore
 {
-    void Seed(string jobId);
+    /// <summary>Records a Pending job for <paramref name="userId"/>; <paramref name="payloadJson"/> is the path-free identity payload.</summary>
+    void Seed(string jobId, string? userId = null, string? payloadJson = null);
 
     void MarkProcessing(string jobId);
 

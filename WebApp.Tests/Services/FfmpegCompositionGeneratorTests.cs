@@ -149,7 +149,7 @@ public sealed class FfmpegCompositionGeneratorTests
         new(
             Options.Create(new VideoCutOptions { Path = cutRoot }),
             Options.Create(new VideoCompositionOptions { Path = compositionRoot, TransitionDurationSeconds = 5 }),
-            new CompositionNamingService(Options.Create(new VideoCompositionOptions { Path = compositionRoot })),
+            new CompositionNamingService(Options.Create(new VideoCompositionOptions { Path = compositionRoot }), JobTestDb.Shared.Counters),
             probe);
 
     private static VideoFileEntry CreateEntry(string physicalPath)

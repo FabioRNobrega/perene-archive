@@ -80,25 +80,6 @@ internal sealed class FolderJobAuthorizer(IServiceScopeFactory scopes, FolderLoc
     }
 }
 
-/// <summary>Remembers which account enqueued each job so job lists only show a member their own work. Admins see everything.</summary>
-internal sealed class JobOwnerRegistry
-{
-    private const int Capacity = 2000;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _owners = new(StringComparer.Ordinal);
-    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _order = new();
-
-    public void Set(string jobId, string? userId)
-    {
-        if (userId is null) return;
-        _owners[jobId] = userId;
-        _order.Enqueue(jobId);
-        while (_order.Count > Capacity && _order.TryDequeue(out var oldest)) _owners.TryRemove(oldest, out _);
-    }
-
-    public bool IsVisibleTo(string jobId, string? userId, bool isAdmin) =>
-        isAdmin || (userId is not null && _owners.TryGetValue(jobId, out var owner) && owner == userId);
-}
-
 /// <summary>Keeps folder rows aligned with the filesystem after a queued move, trash, or empty-trash job succeeds.</summary>
 internal interface IFolderPathSync
 {

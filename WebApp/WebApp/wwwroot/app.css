@@ -295,6 +295,25 @@ h1:focus { outline: none; }
     --bs-nav-tabs-border-color: var(--border);
 }
 
+/* Pagination: the design guide has no dedicated pattern, so it reuses the guide's own states: list-group hover (green tint) and nav-pills active (gold fill), instead of the default Bootstrap blue. */
+.pagination {
+    --bs-pagination-color: var(--text-body);
+    --bs-pagination-bg: var(--bg-surface);
+    --bs-pagination-border-color: var(--border);
+    --bs-pagination-hover-color: var(--brand-green-onbg);
+    --bs-pagination-hover-bg: var(--hover-bg);
+    --bs-pagination-hover-border-color: var(--hover-border);
+    --bs-pagination-focus-color: var(--brand-green-onbg);
+    --bs-pagination-focus-bg: var(--hover-bg);
+    --bs-pagination-focus-box-shadow: 0 0 0 .2rem var(--bs-focus-ring-color);
+    --bs-pagination-active-color: #16211b;
+    --bs-pagination-active-bg: #b98a2e;
+    --bs-pagination-active-border-color: #b98a2e;
+    --bs-pagination-disabled-color: var(--text-muted);
+    --bs-pagination-disabled-bg: var(--bg-surface);
+    --bs-pagination-disabled-border-color: var(--border);
+}
+
 /* Keep breadcrumb links/active crumb in the Perene gold family instead of the default link blue. */
 .breadcrumb {
     --bs-breadcrumb-item-active-color: var(--brand-gold-onbg);

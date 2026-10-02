@@ -8,7 +8,7 @@ public sealed class ImageCropNamingServiceTests
     public void Empty_directory_yields_first_counter_for_prefix()
     {
         using var cuts = new TemporaryDirectory();
-        var service = new ImageCropNamingService();
+        var service = new ImageCropNamingService(JobTestDb.Shared.Counters);
 
         Assert.Equal(Path.Combine(cuts.Path, "Beach Sunset 0001.jpg"),
             service.GetNextPath(cuts.Path, "Beach Sunset - Original.jpg", ".jpg"));
@@ -20,7 +20,7 @@ public sealed class ImageCropNamingServiceTests
         using var cuts = new TemporaryDirectory();
         await File.WriteAllBytesAsync(Path.Combine(cuts.Path, "beach sunset 0003.jpg"), [1]);
         await File.WriteAllBytesAsync(Path.Combine(cuts.Path, "Mountain View 0099.jpg"), [1]);
-        var service = new ImageCropNamingService();
+        var service = new ImageCropNamingService(JobTestDb.Shared.Counters);
 
         Assert.Equal(Path.Combine(cuts.Path, "Beach Sunset 0004.jpg"),
             service.GetNextPath(cuts.Path, "Beach Sunset - Clip Two.jpg", ".jpg"));
@@ -30,7 +30,7 @@ public sealed class ImageCropNamingServiceTests
     public void Single_word_source_uses_the_single_word_as_prefix()
     {
         using var cuts = new TemporaryDirectory();
-        var service = new ImageCropNamingService();
+        var service = new ImageCropNamingService(JobTestDb.Shared.Counters);
 
         Assert.Equal(Path.Combine(cuts.Path, "Mononym 0001.png"), service.GetNextPath(cuts.Path, "Mononym.png", ".png"));
     }
@@ -47,7 +47,7 @@ public sealed class ImageCropNamingServiceTests
     {
         using var cuts = new TemporaryDirectory();
         await File.WriteAllBytesAsync(Path.Combine(cuts.Path, "Beach Sunset 0005.png"), [1]);
-        var service = new ImageCropNamingService();
+        var service = new ImageCropNamingService(JobTestDb.Shared.Counters);
 
         Assert.Equal(Path.Combine(cuts.Path, "Beach Sunset 0001.jpg"),
             service.GetNextPath(cuts.Path, "Beach Sunset.jpg", ".jpg"));

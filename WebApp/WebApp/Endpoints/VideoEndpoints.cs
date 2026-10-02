@@ -294,6 +294,8 @@ internal static class VideoEndpoints
         IVideoLibraryService library,
         IVideoDurationProbe durationProbe,
         ICutJobQueue queue,
+        ICutJobRecorder recorder,
+        JobEnqueueService enqueue,
         CancellationToken cancellationToken)
     {
         if (!library.TryResolve(id, out var entry) || entry is null)
@@ -328,8 +330,10 @@ internal static class VideoEndpoints
 
         var jobId = Guid.NewGuid().ToString("N");
         var job = new CutJob(jobId, entry, TimeSpan.FromSeconds(request.Start), TimeSpan.FromSeconds(request.End), ArchiveListingAccess.UserId(http));
+        recorder.Seed(job, await enqueue.BuildCutPayloadAsync(job, cancellationToken));
         if (!queue.TryEnqueue(job))
         {
+            recorder.MarkFailed(jobId, "The cut queue is full. Try again shortly.");
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 

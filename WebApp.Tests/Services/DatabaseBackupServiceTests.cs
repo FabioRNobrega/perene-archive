@@ -42,8 +42,8 @@ public sealed class DatabaseBackupServiceTests : IDisposable
         Assert.Equal(["keys", "perene.db"], Directory.GetFileSystemEntries(result.Directory).Select(Path.GetFileName).Order().ToArray());
         Assert.Equal(2, result.KeyFileCount);
         Assert.Equal(2, Directory.GetFiles(result.KeysDirectory).Length);
-        Assert.EndsWith("RemoveLegacyImportRuns", result.MigrationId);
         await using var restored = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={result.DatabaseFile};Pooling=False").Options);
+        Assert.EndsWith(restored.Database.GetMigrations().Last(), result.MigrationId);
         Assert.Equal("Kept", (await restored.Users.SingleAsync()).DisplayName);
     }
 

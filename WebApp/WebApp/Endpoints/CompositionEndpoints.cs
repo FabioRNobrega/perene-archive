@@ -30,12 +30,13 @@ internal static class CompositionEndpoints
         return endpoints;
     }
 
-    private static IResult CreateCompositionAsync(
+    private static async Task<IResult> CreateCompositionAsync(
         HttpContext http,
         CreateCompositionRequest request,
         IVideoCutService cuts,
         ICompositionJobQueue queue,
-        ICompositionJobStatusStore statusStore)
+        ICompositionJobStatusStore statusStore,
+        JobEnqueueService enqueue)
     {
         if (request.VideoIds is null || request.VideoIds.Count < 2)
         {
@@ -58,9 +59,10 @@ internal static class CompositionEndpoints
             .ToList();
 
         var jobId = Guid.NewGuid().ToString("N");
-        statusStore.Seed(jobId);
+        var job = new CompositionJob(jobId, ordered, ArchiveListingAccess.UserId(http));
+        statusStore.Seed(jobId, job.ActorUserId, await enqueue.BuildCompositionPayloadAsync(job, http.RequestAborted));
 
-        if (!queue.TryEnqueue(new CompositionJob(jobId, ordered, ArchiveListingAccess.UserId(http))))
+        if (!queue.TryEnqueue(job))
         {
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
@@ -68,9 +70,13 @@ internal static class CompositionEndpoints
         return Results.Accepted("/api/compositions/jobs", new CreateCompositionResponse(jobId));
     }
 
-    private static IResult GetJobs(ICompositionJobStatusStore statusStore)
+    private static async Task<IResult> GetJobs(HttpContext http, ICompositionJobStatusStore statusStore, IJobVisibility visibility)
     {
+        // A member sees the compositions they started; Admins see all.
+        var isAdmin = await ArchiveListingAccess.IsAdminAsync(http);
+        var userId = ArchiveListingAccess.UserId(http);
         var jobs = statusStore.GetAll()
+            .Where(status => visibility.IsVisibleTo(status.JobId, userId, isAdmin))
             .Select(status => new CompositionJobDto(status.JobId, status.State, status.ResultVideoId, status.Diagnostic))
             .ToList();
         return Results.Ok(jobs);

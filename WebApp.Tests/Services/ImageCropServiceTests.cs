@@ -12,7 +12,7 @@ public sealed class ImageCropServiceTests
     {
         using var root = CreateArchive();
         var archive = CreateArchiveService(root.Path);
-        var service = new ImageCropService(archive, new ImageCropNamingService(), new FakeGenerator(ImageCropGenerationResult.Success()));
+        var service = new ImageCropService(archive, new ImageCropNamingService(JobTestDb.Shared.Counters), new FakeGenerator(ImageCropGenerationResult.Success()));
 
         var outcome = await service.CropAsync("photos", "unknown-id", 0, 0, 10, 10, CancellationToken.None);
 
@@ -26,7 +26,7 @@ public sealed class ImageCropServiceTests
         await File.WriteAllBytesAsync(Path.Combine(root.Path, "Pictures", "Beach Sunset.jpg"), [1, 2, 3]);
         var archive = CreateArchiveService(root.Path);
         var item = archive.List("photos", null).Items.Single();
-        var service = new ImageCropService(archive, new ImageCropNamingService(), new FakeGenerator(ImageCropGenerationResult.Success()));
+        var service = new ImageCropService(archive, new ImageCropNamingService(JobTestDb.Shared.Counters), new FakeGenerator(ImageCropGenerationResult.Success()));
         var cutsPath = Path.Combine(root.Path, "Pictures", "cuts");
 
         Assert.False(Directory.Exists(cutsPath));
@@ -47,7 +47,7 @@ public sealed class ImageCropServiceTests
         var archive = CreateArchiveService(root.Path);
         var item = archive.List("photos", null).Items.Single();
         var service = new ImageCropService(
-            archive, new ImageCropNamingService(), new FakeGenerator(ImageCropGenerationResult.OutOfBounds("bad region")));
+            archive, new ImageCropNamingService(JobTestDb.Shared.Counters), new FakeGenerator(ImageCropGenerationResult.OutOfBounds("bad region")));
 
         var outcome = await service.CropAsync("photos", item.Id, 0, 0, 999, 999, CancellationToken.None);
 
@@ -67,7 +67,7 @@ public sealed class ImageCropServiceTests
         var archive = CreateArchiveService(root.Path);
         var item = Assert.Single(archive.List("photos", null).Items);
         var generator = new FakeGenerator(ImageCropGenerationResult.Success());
-        var service = new ImageCropService(archive, new ImageCropNamingService(), generator);
+        var service = new ImageCropService(archive, new ImageCropNamingService(JobTestDb.Shared.Counters), generator);
 
         var outcome = await service.CropAsync("photos", item.Id, 0, 0, 1, 1, CancellationToken.None);
 

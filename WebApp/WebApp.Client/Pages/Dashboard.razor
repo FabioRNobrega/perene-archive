@@ -5,14 +5,14 @@
 <section class="card dashboard-shell h-100 min-h-0 overflow-hidden">
     <div class="card-header p-0">
         <ul class="nav nav-tabs px-3 pt-2" role="tablist">
-            <li class="nav-item"><button class="nav-link @(_showJobs ? null : "active")" type="button" role="tab" aria-selected="@(!_showJobs)" @onclick="() => _showJobs = false">Overview</button></li>
-            <li class="nav-item"><button class="nav-link @(_showJobs ? "active" : null)" type="button" role="tab" aria-selected="@_showJobs" @onclick="ShowJobsAsync">Jobs</button></li>
+            <li class="nav-item"><button class="nav-link @(_showJobs ? null : "active")" type="button" role="tab" aria-selected="@(!_showJobs)" @onclick="() => _showJobs = false"><i class="bi bi-speedometer2 me-2" aria-hidden="true"></i>Overview</button></li>
+            <li class="nav-item"><button class="nav-link @(_showJobs ? "active" : null)" type="button" role="tab" aria-selected="@_showJobs" @onclick="ShowJobsAsync"><i class="bi bi-list-task me-2" aria-hidden="true"></i>Jobs</button></li>
         </ul>
     </div>
     <div class="card-body position-relative h-100 min-h-0 @(_showJobs ? null : "dashboard")">
     @if (_showJobs)
     {
-        <FeatureErrorBoundary FeatureName="Conversion jobs"><DashboardConversionJobsTab @ref="_jobsTab" /></FeatureErrorBoundary>
+        <FeatureErrorBoundary FeatureName="Jobs"><DashboardConversionJobsTab @ref="_jobsTab" /></FeatureErrorBoundary>
     }
     else
     {
@@ -25,7 +25,6 @@
     <FeatureErrorBoundary FeatureName="Health dashboard"><DashboardHealthCard @ref="_healthCard" /></FeatureErrorBoundary>
     <FeatureErrorBoundary FeatureName="History dashboard"><DashboardHistoryCard @ref="_historyCard" /></FeatureErrorBoundary>
     <FeatureErrorBoundary FeatureName="Alerts dashboard"><DashboardAlertsCard @ref="_alertsCard" /></FeatureErrorBoundary>
-    }
     <button type="button"
             class="btn btn-secondary d-inline-flex align-items-center justify-content-center rounded-circle px-3 py-2 position-absolute bottom-0 end-0 z-2"
             title="Refresh"
@@ -33,6 +32,7 @@
             @onclick="RefreshAllAsync">
         <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
     </button>
+    }
     </div>
 </section>
 

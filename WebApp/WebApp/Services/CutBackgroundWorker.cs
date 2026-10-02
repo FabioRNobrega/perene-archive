@@ -8,6 +8,7 @@ internal sealed class CutBackgroundWorker(
     ICutGenerator generator,
     IVideoCutService cuts,
     IFolderJobAuthorizer jobAuthorizer,
+    ICutJobRecorder recorder,
     ILogger<CutBackgroundWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -24,12 +25,14 @@ internal sealed class CutBackgroundWorker(
                 break;
             }
 
+            recorder.MarkProcessing(job.JobId);
             logger.LogInformation("Cut generation started for media {MediaId} (job {JobId}).", job.SourceEntry.Id, job.JobId);
 
             try
             {
                 if (!await jobAuthorizer.CanRunAsync(job, stoppingToken))
                 {
+                    recorder.MarkFailed(job.JobId, "You no longer have access to complete this cut.");
                     logger.LogWarning("Cut generation skipped for media {MediaId} (job {JobId}): the requester no longer has access.", job.SourceEntry.Id, job.JobId);
                     continue;
                 }
@@ -39,12 +42,15 @@ internal sealed class CutBackgroundWorker(
                 {
                     case CutGenerationStatus.Success:
                         logger.LogInformation("Cut generation succeeded for media {MediaId} (job {JobId}).", job.SourceEntry.Id, job.JobId);
+                        recorder.MarkCompleted(job.JobId);
                         await cuts.ScanAsync(stoppingToken);
                         break;
                     case CutGenerationStatus.Cancelled:
+                        recorder.MarkFailed(job.JobId, "The cut was cancelled.");
                         logger.LogInformation("Cut generation cancelled for media {MediaId} (job {JobId}).", job.SourceEntry.Id, job.JobId);
                         break;
                     default:
+                        recorder.MarkFailed(job.JobId, result.Diagnostic ?? "The cut could not be created.");
                         logger.LogWarning(
                             "Cut generation failed for media {MediaId} (job {JobId}): {Diagnostic}",
                             job.SourceEntry.Id, job.JobId, result.Diagnostic);
@@ -53,6 +59,7 @@ internal sealed class CutBackgroundWorker(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
+                recorder.MarkFailed(job.JobId, "Unexpected error during cut generation.");
                 logger.LogError(exception, "Cut generation threw for media {MediaId} (job {JobId}).", job.SourceEntry.Id, job.JobId);
             }
             finally

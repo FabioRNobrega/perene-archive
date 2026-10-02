@@ -4,12 +4,16 @@ using WebApp.Services;
 
 namespace WebApp.Tests.Services;
 
-public sealed class VideoConversionJobStatusStoreTests
+public sealed class VideoConversionJobStatusStoreTests : IDisposable
 {
+    private readonly JobTestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
     [Fact]
     public void Pause_resume_and_stop_are_guarded_and_stop_rejects_late_progress()
     {
-        var store = new VideoConversionJobStatusStore();
+        var store = _db.Conversion;
         var job = new VideoConversionJob("job", new ArchiveItemEntry("source", ArchiveCategory.Defaults[0], "/server-only/source.mp4", "source.mp4", ArchiveItemKind.File, ".mp4", 12, DateTime.UtcNow, true), MediaAction.FullTranscode, new VideoConversionProbeResult("matroska", "vp9", "opus", null, 10, 10, TimeSpan.FromSeconds(20)));
         store.Seed(job);
 
@@ -31,7 +35,7 @@ public sealed class VideoConversionJobStatusStoreTests
     [Fact]
     public void Only_one_job_runs_at_a_time_and_pausing_frees_the_slot()
     {
-        var store = new VideoConversionJobStatusStore();
+        var store = _db.Conversion;
         VideoConversionJob Make(string id) => new(id, new ArchiveItemEntry(id, ArchiveCategory.Defaults[0], "/server-only/" + id + ".mp4", id + ".mp4", ArchiveItemKind.File, ".mp4", 12, DateTime.UtcNow, true), MediaAction.FullTranscode, new VideoConversionProbeResult("matroska", "vp9", "opus", null, 10, 10, TimeSpan.FromSeconds(20)));
         store.Seed(Make("a")); store.Seed(Make("b"));
 

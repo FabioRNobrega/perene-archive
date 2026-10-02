@@ -20,6 +20,9 @@ public static class StartupInitializer
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync();
 
+        // The queues are empty after a restart, so persisted Pending/Processing jobs can never run; fail them rather than replay.
+        await Services.SqliteJobStore.MarkInterruptedAsync(db);
+
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
         if (!await roles.RoleExistsAsync(AccountLifecycleService.AdminRole))
             await roles.CreateAsync(new IdentityRole(AccountLifecycleService.AdminRole));

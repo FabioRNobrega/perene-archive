@@ -1,0 +1,79 @@
+@using WebApp.Client.Models
+@* One job as a fixed-height line: type, status, name, progress / total time / failure reason, actions and a details toggle. *@
+<li class="list-group-item p-0">
+    <div class="row g-2 align-items-center mx-0 px-3 py-2">
+        <div class="col-8 col-md-2 d-flex align-items-center gap-2 text-body-secondary"><i class="bi @Row.IconClass" aria-hidden="true"></i><span class="small text-uppercase fw-semibold text-truncate">@Row.TypeLabel</span></div>
+        <div class="col-4 col-md-2 text-end text-md-start"><span class="badge @Row.BadgeClass">@if (Row.IsActive && Row.State != "Paused") { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }@Row.State</span></div>
+        <div class="col-12 col-md text-truncate fw-semibold" title="@Row.Title">@Row.Title</div>
+        <div class="col-12 col-md-3 text-truncate small">
+            @if (Row.IsActive)
+            {
+                @if (Row.ProgressPercent is { } percent)
+                {
+                    <div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" role="progressbar" aria-label="Progress for @Row.Title" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100" style="height: .65rem;"><div class="progress-bar progress-bar-striped @(Row.State == "Paused" ? null : "progress-bar-animated")" style="@ProgressStyle(percent)"></div></div><strong>@percent%</strong></div>
+                }
+                else if (Row.State == "Processing")
+                {
+                    <div class="progress" role="progressbar" aria-label="Working on @Row.Title" style="height: .65rem;"><div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div></div>
+                }
+                else { <span class="text-body-secondary">Queued</span> }
+            }
+            else if (Row.FailureReason is { } reason) { <span class="text-danger-emphasis" title="@reason">@reason</span> }
+            else if (Row.TotalTime is { } total) { <span class="text-body-secondary">Total time <strong class="text-body">@FormatDuration(total)</strong></span> }
+            else { <span class="text-body-secondary">–</span> }
+        </div>
+        <div class="col-12 col-md-auto d-flex justify-content-end align-items-center gap-1">
+            @if (JobListRules.CanPauseOrResume(Row))
+            {
+                var paused = Row.State == "Paused";
+                <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="min-width:40px;min-height:40px" type="button" title="@(paused ? "Resume" : "Pause")" aria-label="@(paused ? "Resume" : "Pause") @Row.Title" disabled="@Busy" @onclick="() => OnPause.InvokeAsync(Row)"><i class="bi @(paused ? "bi-play-fill" : "bi-pause-fill")" aria-hidden="true"></i></button>
+            }
+            @if (JobListRules.CanStop(Row))
+            {
+                <button class="btn btn-danger d-inline-flex align-items-center justify-content-center" style="min-width:40px;min-height:40px" type="button" title="Stop" aria-label="Stop @Row.Title" disabled="@Busy" @onclick="() => OnStop.InvokeAsync(Row)"><i class="bi bi-stop-fill" aria-hidden="true"></i></button>
+            }
+            @if (JobListRules.CanRetry(Row))
+            {
+                <button class="btn btn-secondary d-inline-flex align-items-center justify-content-center" style="min-width:40px;min-height:40px" type="button" title="Retry" aria-label="Retry @Row.Title" disabled="@Busy" @onclick="() => OnRetry.InvokeAsync(Row)"><i class="bi bi-arrow-repeat" aria-hidden="true"></i></button>
+            }
+            <button class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="min-width:40px;min-height:40px" type="button" title="@(Expanded ? "Hide details" : "Show details")" aria-label="@(Expanded ? "Hide" : "Show") details for @Row.Title" aria-expanded="@(Expanded ? "true" : "false")" aria-controls="@DetailsId" @onclick="() => OnToggle.InvokeAsync(Row.Id)"><i class="bi @(Expanded ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></i></button>
+        </div>
+    </div>
+    @if (Expanded)
+    {
+        <div id="@DetailsId" class="px-3 pb-3 pt-2 border-top bg-body-tertiary">
+            @if (Row.Conversion is { } job)
+            {
+                <JobCommonInfo StartedBy="@job.StartedBy" QueuedUtc="@job.QueuedAtUtc" StartedUtc="@job.StartedAtUtc" FinishedUtc="@job.FinishedAtUtc" Result="@(Row.IsActive ? null : Outcome(job))">
+                    <dt class="col-5 col-md-3 text-body-secondary fw-normal">Profile</dt><dd class="col-7 col-md-9 mb-2">@(job.ProfileLabel ?? job.Action)</dd>
+                    @if (job.EstimatedSizeBytes is not null) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Estimated size</dt><dd class="col-7 col-md-9 mb-2">@FormatSize(job.EstimatedSizeBytes.Value)</dd> }
+                    <dt class="col-5 col-md-3 text-body-secondary fw-normal">Source size</dt><dd class="col-7 col-md-9 mb-2">@(job.SourceSizeBytes is null ? "Unknown" : FormatSize(job.SourceSizeBytes.Value))</dd>
+                    @if (Remaining(job) is { } remaining) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Remaining</dt><dd class="col-7 col-md-9 mb-2">About @FormatDuration(remaining)</dd> }
+                </JobCommonInfo>
+            }
+            else if (Row.Other is { } other)
+            {
+                <JobCommonInfo StartedBy="@other.StartedBy" QueuedUtc="@other.CreatedUtc" StartedUtc="@other.StartedUtc" FinishedUtc="@other.FinishedUtc" Result="@other.Detail">
+                    @if (other.TotalItems is > 0) { <dt class="col-5 col-md-3 text-body-secondary fw-normal">Items</dt><dd class="col-7 col-md-9 mb-2">@(other.ProcessedItems ?? 0) of @other.TotalItems</dd> }
+                </JobCommonInfo>
+            }
+        </div>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public JobRowModel Row { get; set; } = default!;
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<string> OnToggle { get; set; }
+    [Parameter] public EventCallback<JobRowModel> OnPause { get; set; }
+    [Parameter] public EventCallback<JobRowModel> OnStop { get; set; }
+    [Parameter] public EventCallback<JobRowModel> OnRetry { get; set; }
+
+    private string DetailsId => $"job-details-{Row.Id}";
+    private static string ProgressStyle(int percent) => $"width: {percent}%; flex: 0 0 {percent}%;";
+    private static string FormatSize(long bytes) => $"{bytes / 1024d / 1024d:0.0} MB";
+    private static string FormatDuration(TimeSpan value) => value.TotalHours >= 1 ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}" : $"{value.Minutes}:{value.Seconds:00}";
+    private static string Outcome(VideoConversionJobDto job) => job.OutputSizeBytes is not null ? FormatSize(job.OutputSizeBytes.Value) : job.Diagnostic ?? "Waiting to start.";
+    private static TimeSpan? Remaining(VideoConversionJobDto job) => job.State == VideoConversionJobState.Processing && job.SourceDurationSeconds is > 0 && job.ProcessedDurationSeconds is not null && job.Speed is > 0 ? TimeSpan.FromSeconds(Math.Max(0, job.SourceDurationSeconds.Value - job.ProcessedDurationSeconds.Value) / job.Speed.Value) : null;
+}

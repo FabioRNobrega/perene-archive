@@ -4,12 +4,16 @@ using WebApp.Services;
 
 namespace WebApp.Tests.Services;
 
-public sealed class ArchiveMutationJobStatusStoreTests
+public sealed class ArchiveMutationJobStatusStoreTests : IDisposable
 {
+    private readonly JobTestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
     [Fact]
     public void Seeded_job_starts_pending_and_transitions_through_processing_to_completed()
     {
-        var store = new ArchiveMutationJobStatusStore();
+        var store = _db.Mutation;
         store.Seed(CreateJob("job-1", totalItems: 3));
 
         var seeded = Assert.Single(store.GetAll());
@@ -32,7 +36,7 @@ public sealed class ArchiveMutationJobStatusStoreTests
     [Fact]
     public void Failed_job_records_diagnostic()
     {
-        var store = new ArchiveMutationJobStatusStore();
+        var store = _db.Mutation;
         store.Seed(CreateJob("job-1", totalItems: 1));
 
         store.MarkFailed("job-1", "disk full");
@@ -45,7 +49,7 @@ public sealed class ArchiveMutationJobStatusStoreTests
     [Fact]
     public void Progress_after_a_terminal_state_does_not_regress_it()
     {
-        var store = new ArchiveMutationJobStatusStore();
+        var store = _db.Mutation;
         store.Seed(CreateJob("job-1", totalItems: 5));
         store.MarkProcessing("job-1");
         store.MarkFailed("job-1", "boom");
@@ -61,7 +65,7 @@ public sealed class ArchiveMutationJobStatusStoreTests
     [Fact]
     public void Jobs_are_returned_in_the_order_they_were_seeded()
     {
-        var store = new ArchiveMutationJobStatusStore();
+        var store = _db.Mutation;
         store.Seed(CreateJob("first", totalItems: 1));
         store.Seed(CreateJob("second", totalItems: 1));
         store.Seed(CreateJob("third", totalItems: 1));
